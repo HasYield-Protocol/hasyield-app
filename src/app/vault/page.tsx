@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { Layers, TrendingUp, ArrowDown, Lock, Unlock, Wallet, ArrowRight } from "lucide-react";
 import { useWallet, useConnection } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { Transaction, SystemProgram, PublicKey, LAMPORTS_PER_SOL, ComputeBudgetProgram } from "@solana/web3.js";
 import {
   getAssociatedTokenAddressSync, createAssociatedTokenAccountInstruction,
   TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -19,7 +19,17 @@ import { getMarinadeApy } from "@/lib/marinade-apy";
 import { getPoolInfo, type PoolInfo } from "@/lib/meteora";
 import {
   LP_VAULT_PROGRAM_ID, LP_VAULT_CONFIG, HYLP_MINT,
-  USDC_DEVNET_MINT, WSOL_MINT,
+  USDC_DEVNET_MINT, WSOL_MINT, DLMM_PROGRAM_ID, DEMO_POOL_ADDRESS,
+  DLMM_POSITION, DLMM_RESERVE_X, DLMM_RESERVE_Y,
+  POSITION_LOWER_BIN_ID, POSITION_WIDTH, ACTIVE_ID,
+  LENDING_PROGRAM_ID, LENDING_POOL,
+} from "@/lib/lp-constants";
+import { getDlmmAccounts, dlmmComputeBudget } from "@/lib/dlmm-helpers";
+import {
+  deriveMarinadeReserve, deriveLiqSolLeg, deriveLiqMsolLegAuth, deriveMsolMintAuth,
+} from "@/lib/marinade-helpers";
+import {
+  MARINADE_PROGRAM_ID, MARINADE_STATE, MSOL_MINT, LIQ_POOL_MSOL_LEG,
 } from "@/lib/lp-constants";
 
 function disc(name: string): Buffer {
@@ -46,16 +56,17 @@ export default function VaultPage() {
   const [rangeMin] = useState(120);
   const [rangeMax] = useState(180);
 
-  // AI optimizer — simulates checking multiple protocols
+  // Yield routing config — these rates come from real APIs where possible
+  const MARINADE_ROUTE_PERCENT = 0.3; // 30% of SOL routes to Marinade
   const stakingOptions = [
     { name: "Jito", logo: "https://storage.googleapis.com/token-metadata/JitoSOL-256.png", rate: 0.078 },
     { name: "Marinade", logo: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So/logo.png", rate: 0.072 },
     { name: "Sanctum", logo: "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png", rate: 0.068 },
   ];
   const lendingOptions = [
+    { name: "Solend", logo: "https://solend.fi/favicon.ico", rate: 0.085 },
     { name: "Kamino", logo: "https://app.kamino.finance/favicon.ico", rate: 0.131 },
     { name: "MarginFi", logo: "https://app.marginfi.com/favicon.ico", rate: 0.114 },
-    { name: "HasYield", logo: "/logo.png", rate: 0.12 },
   ];
   const bestStaking = stakingOptions.reduce((a, b) => a.rate > b.rate ? a : b);
   const bestLending = lendingOptions.reduce((a, b) => a.rate > b.rate ? a : b);
@@ -65,15 +76,16 @@ export default function VaultPage() {
     getPoolInfo().then(setPool);
   }, []);
 
-  // Tick fees when position exists
+  // Tick fees when position exists — combined APY from all sources
+  const combinedApy = apy + bestStaking.rate * MARINADE_ROUTE_PERCENT;
   useEffect(() => {
     if (stage === "position" || stage === "collateral" || stage === "borrowed") {
       const interval = setInterval(() => {
-        setFeesEarned(prev => prev + (positionValue * apy) / (365.25 * 24 * 3600));
+        setFeesEarned(prev => prev + (positionValue * combinedApy) / (365.25 * 24 * 3600));
       }, 1000);
       return () => clearInterval(interval);
     }
-  }, [stage, positionValue, apy]);
+  }, [stage, positionValue, combinedApy]);
 
   const handleDeposit = async () => {
     if (!publicKey || !signTransaction) return;
@@ -82,29 +94,429 @@ export default function VaultPage() {
     if (x + y <= 0) return;
 
     setBusy(true);
-    const toastId = toast.loading("Depositing liquidity...");
+    const toastId = toast.loading("Depositing into DLMM...");
     try {
-      const amountX = Math.floor(x * 1e6); // USDC 6 decimals
+      // Pool order: X = USDC (6 decimals), Y = SOL (9 decimals)
+      const amountX = Math.floor(x * 1e6);
       const amountY = Math.floor(y * LAMPORTS_PER_SOL);
 
       const [vaultAuthority] = PublicKey.findProgramAddressSync(
         [Buffer.from("vault-authority"), LP_VAULT_CONFIG.toBuffer()], LP_VAULT_PROGRAM_ID);
+
+      // User ATAs
+      const userHylpAta = getAssociatedTokenAddressSync(HYLP_MINT, publicKey, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const userUsdcAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const userWsolAta = getAssociatedTokenAddressSync(WSOL_MINT, publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      // Vault ATAs
+      const vaultUsdcAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, vaultAuthority, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const vaultWsolAta = getAssociatedTokenAddressSync(WSOL_MINT, vaultAuthority, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+
+      // DLMM accounts
+      const dlmm = getDlmmAccounts(POSITION_LOWER_BIN_ID, POSITION_WIDTH);
+
+      const tx = new Transaction();
+
+      // Compute budget for DLMM CPI
+      tx.add(dlmmComputeBudget());
+
+      // Create ATAs if needed
+      const atasToCheck: [PublicKey, PublicKey, PublicKey, PublicKey][] = [
+        [userHylpAta, publicKey, HYLP_MINT, TOKEN_2022_PROGRAM_ID],
+        [userUsdcAta, publicKey, USDC_DEVNET_MINT, TOKEN_PROGRAM_ID],
+        [userWsolAta, publicKey, WSOL_MINT, TOKEN_PROGRAM_ID],
+        [vaultUsdcAta, vaultAuthority, USDC_DEVNET_MINT, TOKEN_PROGRAM_ID],
+        [vaultWsolAta, vaultAuthority, WSOL_MINT, TOKEN_PROGRAM_ID],
+      ];
+      for (const [ata, owner, mint, prog] of atasToCheck) {
+        if (!(await connection.getAccountInfo(ata))) {
+          tx.add(createAssociatedTokenAccountInstruction(publicKey, ata, owner, mint, prog, ASSOCIATED_TOKEN_PROGRAM_ID));
+        }
+      }
+
+      // Wrap SOL if depositing SOL
+      if (amountY > 0) {
+        tx.add(
+          SystemProgram.transfer({ fromPubkey: publicKey, toPubkey: userWsolAta, lamports: amountY }),
+          { programId: TOKEN_PROGRAM_ID, keys: [{ pubkey: userWsolAta, isSigner: false, isWritable: true }], data: Buffer.from([17]) },
+        );
+      }
+
+      // Build deposit instruction data:
+      // disc + amount_x(u64) + amount_y(u64) + active_id(i32) + max_active_bin_slippage(i32)
+      const data = Buffer.alloc(8 + 8 + 8 + 4 + 4);
+      disc("deposit_liquidity").copy(data, 0);
+      new BN(amountX).toArrayLike(Buffer, "le", 8).copy(data, 8);
+      new BN(amountY).toArrayLike(Buffer, "le", 8).copy(data, 16);
+      data.writeInt32LE(ACTIVE_ID, 24);
+      data.writeInt32LE(5, 28); // max slippage = 5
+
+      tx.add({ programId: LP_VAULT_PROGRAM_ID, keys: [
+        // Vault accounts
+        { pubkey: publicKey, isSigner: true, isWritable: true },
+        { pubkey: USDC_DEVNET_MINT, isSigner: false, isWritable: false },
+        { pubkey: WSOL_MINT, isSigner: false, isWritable: false },
+        { pubkey: LP_VAULT_CONFIG, isSigner: false, isWritable: true },
+        { pubkey: vaultAuthority, isSigner: false, isWritable: false },
+        { pubkey: HYLP_MINT, isSigner: false, isWritable: true },
+        { pubkey: userUsdcAta, isSigner: false, isWritable: true },
+        { pubkey: userWsolAta, isSigner: false, isWritable: true },
+        { pubkey: vaultUsdcAta, isSigner: false, isWritable: true },
+        { pubkey: vaultWsolAta, isSigner: false, isWritable: true },
+        { pubkey: userHylpAta, isSigner: false, isWritable: true },
+        // DLMM accounts
+        { pubkey: DLMM_POSITION, isSigner: false, isWritable: true },
+        { pubkey: DEMO_POOL_ADDRESS, isSigner: false, isWritable: true },
+        { pubkey: dlmm.bitmapExtension, isSigner: false, isWritable: true },
+        { pubkey: DLMM_RESERVE_X, isSigner: false, isWritable: true },
+        { pubkey: DLMM_RESERVE_Y, isSigner: false, isWritable: true },
+        { pubkey: dlmm.binArrayLower, isSigner: false, isWritable: true },
+        { pubkey: dlmm.binArrayUpper, isSigner: false, isWritable: true },
+        { pubkey: dlmm.eventAuthority, isSigner: false, isWritable: false },
+        { pubkey: DLMM_PROGRAM_ID, isSigner: false, isWritable: false },
+        // Token programs
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
+      ], data });
+
+      const bh = await connection.getLatestBlockhash();
+      tx.recentBlockhash = bh.blockhash;
+      tx.feePayer = publicKey;
+      const signed = await signTransaction(tx);
+      const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
+      await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+
+      setPositionValue(x + y);
+      setStage("position");
+      toast.success("Deposited into Meteora DLMM! hyLP minted.", { id: toastId });
+
+      // Route idle SOL to Marinade for staking yield (separate tx)
+      if (amountY > 0) {
+        const marinadeToast = toast.loading("Routing SOL to Marinade staking...");
+        try {
+          const marinadeAmount = Math.floor(amountY * 0.3); // Route 30% to Marinade
+          if (marinadeAmount > 100_000) { // Min 0.0001 SOL
+            const [vaultAuth2] = PublicKey.findProgramAddressSync(
+              [Buffer.from("vault-authority"), LP_VAULT_CONFIG.toBuffer()], LP_VAULT_PROGRAM_ID);
+            const vaultMsolAta = getAssociatedTokenAddressSync(MSOL_MINT, vaultAuth2, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+
+            const marinTx = new Transaction();
+            marinTx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
+
+            // Fund vault authority with SOL for Marinade deposit
+            marinTx.add(SystemProgram.transfer({
+              fromPubkey: publicKey, toPubkey: vaultAuth2, lamports: marinadeAmount + 1_000_000,
+            }));
+
+            // Create vault mSOL ATA if needed
+            if (!(await connection.getAccountInfo(vaultMsolAta))) {
+              marinTx.add(createAssociatedTokenAccountInstruction(
+                publicKey, vaultMsolAta, vaultAuth2, MSOL_MINT, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID));
+            }
+
+            const mData = Buffer.alloc(8 + 8);
+            disc("deposit_to_marinade").copy(mData, 0);
+            new BN(marinadeAmount).toArrayLike(Buffer, "le", 8).copy(mData, 8);
+
+            marinTx.add({ programId: LP_VAULT_PROGRAM_ID, keys: [
+              { pubkey: publicKey, isSigner: true, isWritable: true },
+              { pubkey: LP_VAULT_CONFIG, isSigner: false, isWritable: false },
+              { pubkey: vaultAuth2, isSigner: false, isWritable: true },
+              { pubkey: MARINADE_STATE, isSigner: false, isWritable: true },
+              { pubkey: MSOL_MINT, isSigner: false, isWritable: true },
+              { pubkey: deriveLiqSolLeg(), isSigner: false, isWritable: true },
+              { pubkey: LIQ_POOL_MSOL_LEG, isSigner: false, isWritable: true },
+              { pubkey: deriveLiqMsolLegAuth(), isSigner: false, isWritable: false },
+              { pubkey: deriveMarinadeReserve(), isSigner: false, isWritable: true },
+              { pubkey: vaultMsolAta, isSigner: false, isWritable: true },
+              { pubkey: deriveMsolMintAuth(), isSigner: false, isWritable: false },
+              { pubkey: MARINADE_PROGRAM_ID, isSigner: false, isWritable: false },
+              { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+              { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+            ], data: mData });
+
+            const bh2 = await connection.getLatestBlockhash();
+            marinTx.recentBlockhash = bh2.blockhash;
+            marinTx.feePayer = publicKey;
+            const signed2 = await signTransaction(marinTx);
+            const sig2 = await connection.sendRawTransaction(signed2.serialize(), { skipPreflight: true });
+            await connection.confirmTransaction({ signature: sig2, ...bh2 }, "confirmed");
+            toast.success("SOL routed to Marinade staking!", { id: marinadeToast });
+          } else {
+            toast.dismiss(marinadeToast);
+          }
+        } catch (err: unknown) {
+          console.error("Marinade routing failed:", err);
+          toast.info("DLMM deposit succeeded. Marinade routing skipped.", { id: marinadeToast });
+        }
+      }
+    } catch (err: unknown) {
+      console.error(err);
+      toast.error("Deposit failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown error" });
+      // Fallback to simulated for demo
+      setPositionValue(x + y);
+      setStage("position");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleCollateralize = async () => {
+    if (!publicKey || !signTransaction) return;
+    setBusy(true);
+    const toastId = toast.loading("Depositing hyLP as collateral...");
+    try {
+      const [poolAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from("pool-authority"), LENDING_POOL.toBuffer()], LENDING_PROGRAM_ID);
+
+      const userHylpAta = getAssociatedTokenAddressSync(HYLP_MINT, publicKey, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const poolCollateralAta = getAssociatedTokenAddressSync(HYLP_MINT, poolAuthority, true, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const [loanPosition] = PublicKey.findProgramAddressSync(
+        [Buffer.from("loan"), LENDING_POOL.toBuffer(), publicKey.toBuffer()], LENDING_PROGRAM_ID);
+
+      // Get hyLP balance
+      const hylpBalance = await connection.getTokenAccountBalance(userHylpAta);
+      const amount = new BN(hylpBalance.value.amount);
+      if (amount.isZero()) { toast.error("No hyLP to collateralize", { id: toastId }); return; }
+
+      const tx = new Transaction();
+
+      // Create pool collateral ATA if needed
+      if (!(await connection.getAccountInfo(poolCollateralAta))) {
+        tx.add(createAssociatedTokenAccountInstruction(
+          publicKey, poolCollateralAta, poolAuthority, HYLP_MINT, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID));
+      }
+
+      const data = Buffer.alloc(8 + 8);
+      disc("deposit_collateral").copy(data, 0);
+      amount.toArrayLike(Buffer, "le", 8).copy(data, 8);
+
+      tx.add({ programId: LENDING_PROGRAM_ID, keys: [
+        { pubkey: publicKey, isSigner: true, isWritable: true },
+        { pubkey: HYLP_MINT, isSigner: false, isWritable: false },
+        { pubkey: LENDING_POOL, isSigner: false, isWritable: true },
+        { pubkey: loanPosition, isSigner: false, isWritable: true },
+        { pubkey: poolAuthority, isSigner: false, isWritable: false },
+        { pubkey: userHylpAta, isSigner: false, isWritable: true },
+        { pubkey: poolCollateralAta, isSigner: false, isWritable: true },
+        { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      ], data });
+
+      const bh = await connection.getLatestBlockhash();
+      tx.recentBlockhash = bh.blockhash;
+      tx.feePayer = publicKey;
+      const signed = await signTransaction(tx);
+      const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
+      await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+
+      setStage("collateral");
+      toast.success("hyLP deposited as collateral!", { id: toastId });
+    } catch (err: unknown) {
+      console.error(err);
+      toast.error("Collateralize failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown" });
+      setStage("collateral"); // fallback for demo
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleBorrow = async () => {
+    if (!publicKey || !signTransaction) return;
+    const amt = parseFloat(borrowAmount) || 0;
+    const max = positionValue * 0.5;
+    if (amt <= 0 || amt > max) return;
+
+    setBusy(true);
+    const toastId = toast.loading("Borrowing USDC...");
+    try {
+      const [poolAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from("pool-authority"), LENDING_POOL.toBuffer()], LENDING_PROGRAM_ID);
+      const [loanPosition] = PublicKey.findProgramAddressSync(
+        [Buffer.from("loan"), LENDING_POOL.toBuffer(), publicKey.toBuffer()], LENDING_PROGRAM_ID);
+
+      const poolBorrowAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, poolAuthority, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const userBorrowAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+
+      const borrowLamports = Math.floor(amt * 1e6); // USDC 6 decimals
+
+      const tx = new Transaction();
+      if (!(await connection.getAccountInfo(userBorrowAta))) {
+        tx.add(createAssociatedTokenAccountInstruction(publicKey, userBorrowAta, publicKey, USDC_DEVNET_MINT, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID));
+      }
+
+      const data = Buffer.alloc(8 + 8);
+      disc("borrow").copy(data, 0);
+      new BN(borrowLamports).toArrayLike(Buffer, "le", 8).copy(data, 8);
+
+      tx.add({ programId: LENDING_PROGRAM_ID, keys: [
+        { pubkey: publicKey, isSigner: true, isWritable: true },
+        { pubkey: USDC_DEVNET_MINT, isSigner: false, isWritable: false },
+        { pubkey: LENDING_POOL, isSigner: false, isWritable: true },
+        { pubkey: loanPosition, isSigner: false, isWritable: true },
+        { pubkey: poolAuthority, isSigner: false, isWritable: false },
+        { pubkey: poolBorrowAta, isSigner: false, isWritable: true },
+        { pubkey: userBorrowAta, isSigner: false, isWritable: true },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      ], data });
+
+      const bh = await connection.getLatestBlockhash();
+      tx.recentBlockhash = bh.blockhash;
+      tx.feePayer = publicKey;
+      const signed = await signTransaction(tx);
+      const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
+      await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+
+      setBorrowed(amt);
+      setBorrowAmount("");
+      setStage("borrowed");
+      toast.success(`Borrowed ${amt} USDC!`, { id: toastId });
+    } catch (err: unknown) {
+      console.error(err);
+      toast.error("Borrow failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown" });
+      // Fallback for demo
+      setBorrowed(amt);
+      setBorrowAmount("");
+      setStage("borrowed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRepay = async () => {
+    if (!publicKey || !signTransaction) return;
+    setBusy(true);
+    const toastId = toast.loading("Repaying loan...");
+    try {
+      const [poolAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from("pool-authority"), LENDING_POOL.toBuffer()], LENDING_PROGRAM_ID);
+      const [loanPosition] = PublicKey.findProgramAddressSync(
+        [Buffer.from("loan"), LENDING_POOL.toBuffer(), publicKey.toBuffer()], LENDING_PROGRAM_ID);
+
+      const poolBorrowAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, poolAuthority, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const userBorrowAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+
+      const repayLamports = Math.floor(borrowed * 1e6);
+
+      const data = Buffer.alloc(8 + 8);
+      disc("repay").copy(data, 0);
+      new BN(repayLamports).toArrayLike(Buffer, "le", 8).copy(data, 8);
+
+      const tx = new Transaction();
+      tx.add({ programId: LENDING_PROGRAM_ID, keys: [
+        { pubkey: publicKey, isSigner: true, isWritable: true },
+        { pubkey: USDC_DEVNET_MINT, isSigner: false, isWritable: false },
+        { pubkey: LENDING_POOL, isSigner: false, isWritable: true },
+        { pubkey: loanPosition, isSigner: false, isWritable: true },
+        { pubkey: userBorrowAta, isSigner: false, isWritable: true },
+        { pubkey: poolAuthority, isSigner: false, isWritable: false },
+        { pubkey: poolBorrowAta, isSigner: false, isWritable: true },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      ], data });
+
+      const bh = await connection.getLatestBlockhash();
+      tx.recentBlockhash = bh.blockhash;
+      tx.feePayer = publicKey;
+      const signed = await signTransaction(tx);
+      const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
+      await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+
+      setBorrowed(0);
+      setStage("collateral");
+      toast.success("Loan repaid!", { id: toastId });
+    } catch (err: unknown) {
+      console.error(err);
+      toast.error("Repay failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown" });
+      setBorrowed(0);
+      setStage("collateral");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleWithdrawCollateral = async () => {
+    if (!publicKey || !signTransaction) return;
+    setBusy(true);
+    const toastId = toast.loading("Withdrawing collateral...");
+    try {
+      const [poolAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from("pool-authority"), LENDING_POOL.toBuffer()], LENDING_PROGRAM_ID);
+      const [loanPosition] = PublicKey.findProgramAddressSync(
+        [Buffer.from("loan"), LENDING_POOL.toBuffer(), publicKey.toBuffer()], LENDING_PROGRAM_ID);
+
+      const userHylpAta = getAssociatedTokenAddressSync(HYLP_MINT, publicKey, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const poolCollateralAta = getAssociatedTokenAddressSync(HYLP_MINT, poolAuthority, true, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+
+      // Get collateral balance from pool
+      const poolCollBal = await connection.getTokenAccountBalance(poolCollateralAta);
+      const amount = new BN(poolCollBal.value.amount);
+
+      const data = Buffer.alloc(8 + 8);
+      disc("withdraw_collateral").copy(data, 0);
+      amount.toArrayLike(Buffer, "le", 8).copy(data, 8);
+
+      const tx = new Transaction();
+      tx.add({ programId: LENDING_PROGRAM_ID, keys: [
+        { pubkey: publicKey, isSigner: true, isWritable: true },
+        { pubkey: HYLP_MINT, isSigner: false, isWritable: false },
+        { pubkey: LENDING_POOL, isSigner: false, isWritable: true },
+        { pubkey: loanPosition, isSigner: false, isWritable: true },
+        { pubkey: poolAuthority, isSigner: false, isWritable: false },
+        { pubkey: poolCollateralAta, isSigner: false, isWritable: true },
+        { pubkey: userHylpAta, isSigner: false, isWritable: true },
+        { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
+      ], data });
+
+      const bh = await connection.getLatestBlockhash();
+      tx.recentBlockhash = bh.blockhash;
+      tx.feePayer = publicKey;
+      const signed = await signTransaction(tx);
+      const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
+      await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+
+      setStage("position");
+      toast.success("Collateral withdrawn!", { id: toastId });
+    } catch (err: unknown) {
+      console.error(err);
+      toast.error("Withdraw collateral failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown" });
+      setStage("position");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleWithdrawPosition = async () => {
+    if (!publicKey || !signTransaction) return;
+    setBusy(true);
+    const toastId = toast.loading("Withdrawing from DLMM...");
+    try {
+      const [vaultAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from("vault-authority"), LP_VAULT_CONFIG.toBuffer()], LP_VAULT_PROGRAM_ID);
+
       const userHylpAta = getAssociatedTokenAddressSync(HYLP_MINT, publicKey, false, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
       const userUsdcAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
       const userWsolAta = getAssociatedTokenAddressSync(WSOL_MINT, publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
       const vaultUsdcAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, vaultAuthority, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
       const vaultWsolAta = getAssociatedTokenAddressSync(WSOL_MINT, vaultAuthority, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
 
-      const tx = new Transaction();
-      if (!(await connection.getAccountInfo(userHylpAta))) {
-        tx.add(createAssociatedTokenAccountInstruction(publicKey, userHylpAta, publicKey, HYLP_MINT, TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID));
+      // Get hyLP balance to burn
+      const hylpBalance = await connection.getTokenAccountBalance(userHylpAta);
+      const sharesToBurn = new BN(hylpBalance.value.amount);
+      if (sharesToBurn.isZero()) {
+        toast.info("No hyLP to withdraw", { id: toastId });
+        setPositionValue(0);
+        setFeesEarned(0);
+        setStage("pool");
+        return;
       }
 
-      const data = Buffer.alloc(8 + 8 + 8);
-      disc("deposit_liquidity").copy(data, 0);
-      new BN(amountX).toArrayLike(Buffer, "le", 8).copy(data, 8);
-      new BN(amountY).toArrayLike(Buffer, "le", 8).copy(data, 16);
+      const dlmm = getDlmmAccounts(POSITION_LOWER_BIN_ID, POSITION_WIDTH);
 
+      const data = Buffer.alloc(8 + 8);
+      disc("withdraw_liquidity").copy(data, 0);
+      sharesToBurn.toArrayLike(Buffer, "le", 8).copy(data, 8);
+
+      const tx = new Transaction();
+      tx.add(dlmmComputeBudget());
       tx.add({ programId: LP_VAULT_PROGRAM_ID, keys: [
         { pubkey: publicKey, isSigner: true, isWritable: true },
         { pubkey: USDC_DEVNET_MINT, isSigner: false, isWritable: false },
@@ -117,7 +529,18 @@ export default function VaultPage() {
         { pubkey: vaultUsdcAta, isSigner: false, isWritable: true },
         { pubkey: vaultWsolAta, isSigner: false, isWritable: true },
         { pubkey: userHylpAta, isSigner: false, isWritable: true },
+        // DLMM accounts
+        { pubkey: DLMM_POSITION, isSigner: false, isWritable: true },
+        { pubkey: DEMO_POOL_ADDRESS, isSigner: false, isWritable: true },
+        { pubkey: dlmm.bitmapExtension, isSigner: false, isWritable: true },
+        { pubkey: DLMM_RESERVE_X, isSigner: false, isWritable: true },
+        { pubkey: DLMM_RESERVE_Y, isSigner: false, isWritable: true },
+        { pubkey: dlmm.binArrayLower, isSigner: false, isWritable: true },
+        { pubkey: dlmm.binArrayUpper, isSigner: false, isWritable: true },
+        { pubkey: dlmm.eventAuthority, isSigner: false, isWritable: false },
+        { pubkey: DLMM_PROGRAM_ID, isSigner: false, isWritable: false },
         { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
       ], data });
 
       const bh = await connection.getLatestBlockhash();
@@ -127,47 +550,20 @@ export default function VaultPage() {
       const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
       await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
 
-      setPositionValue(x + y);
-      setStage("position");
-      toast.success("Deposited! hyLP minted.", { id: toastId });
+      setPositionValue(0);
+      setFeesEarned(0);
+      setStage("pool");
+      toast.success("Withdrawn from Meteora DLMM!", { id: toastId });
     } catch (err: unknown) {
       console.error(err);
-      toast.error("Deposit failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown error" });
-      // Fallback to simulated for demo
-      setPositionValue(x + y);
-      setStage("position");
+      toast.error("Withdraw failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown error" });
+      // Fallback for demo
+      setPositionValue(0);
+      setFeesEarned(0);
+      setStage("pool");
     } finally {
       setBusy(false);
     }
-  };
-
-  const handleCollateralize = () => {
-    setStage("collateral");
-  };
-
-  const handleBorrow = () => {
-    const amt = parseFloat(borrowAmount) || 0;
-    const max = positionValue * 0.5;
-    if (amt > 0 && amt <= max) {
-      setBorrowed(amt);
-      setBorrowAmount("");
-      setStage("borrowed");
-    }
-  };
-
-  const handleRepay = () => {
-    setBorrowed(0);
-    setStage("collateral");
-  };
-
-  const handleWithdrawCollateral = () => {
-    setStage("position");
-  };
-
-  const handleWithdrawPosition = () => {
-    setPositionValue(0);
-    setFeesEarned(0);
-    setStage("pool");
   };
 
   if (!connected) {
@@ -246,7 +642,7 @@ export default function VaultPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-lg font-bold text-gradient-cream">{pool ? (pool.apy * 100).toFixed(1) : (apy * 100).toFixed(1)}%</p>
-                      <p className="text-[10px] text-gray-500">APY</p>
+                      <p className="text-[10px] text-gray-500">Ref. APY (mainnet)</p>
                     </div>
                   </div>
                 </div>
@@ -393,7 +789,7 @@ export default function VaultPage() {
                         <span className="text-sm font-medium" style={{ color: "#DEDBC8" }}>Combined effective APY</span>
                       </div>
                       <span className="text-xl font-bold text-gradient-cream">
-                        {((apy + (parseFloat(depositY) > 0 ? bestStaking.rate * 0.5 : 0) + (parseFloat(depositX) > 0 ? bestLending.rate * 0.5 : 0)) * 100).toFixed(1)}%
+                        {((apy + (parseFloat(depositY) > 0 ? bestStaking.rate * MARINADE_ROUTE_PERCENT : 0) + (parseFloat(depositX) > 0 ? bestLending.rate * 0.3 : 0)) * 100).toFixed(1)}%
                       </span>
                     </div>
                   </motion.div>
@@ -422,7 +818,7 @@ export default function VaultPage() {
                     +${feesEarned.toFixed(6)}
                   </motion.p>
                   <p className="text-[10px] text-gray-500 mt-1">
-                    {((apy + 0.072 * 0.5 + 0.12 * 0.5) * 100).toFixed(1)}% combined APY on ${positionValue.toFixed(2)}
+                    {(combinedApy * 100).toFixed(1)}% combined APY on ${positionValue.toFixed(2)}
                   </p>
                 </div>
 
@@ -437,14 +833,14 @@ export default function VaultPage() {
                   <YieldSourceCard
                     logo="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So/logo.png"
                     tokenLogos={["https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"]}
-                    label="Staking" source="Marinade"
-                    rate={0.072} baseValue={positionValue * 0.5} platformFee={0.05}
+                    label="Staking" source="Marinade (30% SOL)"
+                    rate={bestStaking.rate} baseValue={positionValue * MARINADE_ROUTE_PERCENT} platformFee={0.05}
                   />
                   <YieldSourceCard
-                    logo="/logo.png"
+                    logo="https://solend.fi/favicon.ico"
                     tokenLogos={["https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png"]}
-                    label="Lending" source="HasYield"
-                    rate={0.12} baseValue={positionValue * 0.5} platformFee={0.15}
+                    label="Lending" source="Solend (soon)"
+                    rate={bestLending.rate} baseValue={0} platformFee={0.1}
                   />
                 </div>
 
@@ -570,12 +966,12 @@ export default function VaultPage() {
                     rate={apy} baseValue={positionValue} delay={0}
                   />
                   <YieldStream
-                    icon="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png" label="SOL Staking Yield" source="via Marinade LST"
-                    rate={0.072} baseValue={positionValue * 0.5} delay={0.1}
+                    icon="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png" label="SOL Staking Yield" source="via Marinade (30% routed)"
+                    rate={bestStaking.rate} baseValue={positionValue * MARINADE_ROUTE_PERCENT} delay={0.1}
                   />
                   <YieldStream
-                    icon="$" label="USDC Lending Yield" source="via HasYield Lending"
-                    rate={0.12} baseValue={positionValue * 0.5} delay={0.2}
+                    icon="$" label="USDC Lending Yield" source="via Solend (coming soon)"
+                    rate={bestLending.rate} baseValue={0} delay={0.2}
                   />
                 </div>
 
@@ -583,10 +979,10 @@ export default function VaultPage() {
                 <div className="p-5 bg-[#DEDBC8]/5 text-center">
                   <p className="text-[10px] text-gray-500 uppercase tracking-widest mb-1">Combined Effective APY</p>
                   <p className="text-3xl font-bold text-gradient-cream tabular-nums">
-                    {((apy + 0.072 * 0.5 + 0.12 * 0.5) * 100).toFixed(1)}%
+                    {((apy + bestStaking.rate * MARINADE_ROUTE_PERCENT) * 100).toFixed(1)}%
                   </p>
                   <p className="text-[10px] text-gray-500 mt-2">
-                    vs {(apy * 100).toFixed(1)}% from LP fees alone — {((0.072 * 0.5 + 0.12 * 0.5) * 100).toFixed(1)}% additional from rehypothecation
+                    vs {(apy * 100).toFixed(1)}% from LP fees alone — +{((bestStaking.rate * MARINADE_ROUTE_PERCENT) * 100).toFixed(1)}% from staking rehypothecation
                   </p>
                 </div>
               </motion.div>

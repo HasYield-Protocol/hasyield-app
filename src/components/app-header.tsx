@@ -15,9 +15,6 @@ export function AppHeader() {
           <Link href="/vault" className="text-gray-400 hover:text-[#E1E0CC] transition">
             Vault
           </Link>
-          <Link href="/vault" className="text-gray-400 hover:text-[#E1E0CC] transition">
-            Dashboard
-          </Link>
           <WalletMultiButton />
         </nav>
       </div>

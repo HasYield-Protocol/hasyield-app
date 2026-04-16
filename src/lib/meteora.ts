@@ -1,7 +1,5 @@
 "use client";
 
-import { Connection, PublicKey } from "@solana/web3.js";
-import { RPC_URL } from "./constants";
 import { DEMO_POOL_ADDRESS } from "./lp-constants";
 
 export interface PoolInfo {
