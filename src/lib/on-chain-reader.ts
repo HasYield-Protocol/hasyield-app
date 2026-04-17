@@ -15,6 +15,7 @@ export interface VaultState {
   collateralDeposited: number; // user's hyLP in lending pool
   borrowedAmount: number;     // user's borrowed USDC
   positionInitialized: boolean;
+  marinadeAllocationBps: number; // current Marinade allocation in basis points
 }
 
 const VAULT_AUTHORITY = new PublicKey("9t6Zv8xtZrogbZL44EqdXknNHgron5MTdtSvTHww1vpc");
@@ -40,6 +41,7 @@ export async function readVaultState(
     collateralDeposited: 0,
     borrowedAmount: 0,
     positionInitialized: false,
+    marinadeAllocationBps: 3000,
   };
 
   // Derive PDAs and ATAs
@@ -72,6 +74,10 @@ export async function readVaultState(
       defaults.totalDepositedY = readU64LE(buf, 144);
       defaults.totalShares = readU64LE(buf, 152);
       defaults.positionInitialized = buf.readUInt8(176) === 1;
+      // marinade_allocation_bps at offset 179 (after bump bytes at 177, 178)
+      if (buf.length >= 181) {
+        defaults.marinadeAllocationBps = buf.readUInt16LE(179);
+      }
     }
   }
 

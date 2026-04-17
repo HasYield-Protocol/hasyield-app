@@ -1009,20 +1009,49 @@ export default function VaultPage() {
                 Optional: use your hyLP as collateral to borrow up to ${(positionValue * 0.5).toFixed(2)} USDC
               </p>
 
-              {/* Coming soon teasers */}
-              <div className="grid grid-cols-2 gap-3 mt-4">
-                <div className="rounded-xl border border-dashed border-[#2a2a2a] bg-[#0a0a0a] p-4 relative">
-                  <span className="absolute top-2 right-2 text-[9px] px-1.5 py-0.5 rounded-full bg-[#DEDBC8]/10 border border-[#DEDBC8]/20" style={{ color: "#DEDBC8" }}>Soon</span>
-                  <TrendingUp className="w-5 h-5 mb-1" style={{ color: "#DEDBC8" }} />
-                  <p className="text-xs font-medium" style={{ color: "#E1E0CC" }}>Yield Trading</p>
-                  <p className="text-[10px] text-gray-600 mt-1">Split into PT + YT. Trade future yield.</p>
+              {/* Protocol Allocation */}
+              <div className="rounded-2xl border border-[#1a1a1a] bg-[#0a0a0a] p-5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Layers className="w-4 h-4" style={{ color: "#DEDBC8" }} />
+                    <p className="text-sm font-medium" style={{ color: "#E1E0CC" }}>Capital Allocation</p>
+                  </div>
+                  <span className="text-[9px] px-2 py-0.5 rounded-full bg-[#DEDBC8]/10" style={{ color: "#DEDBC8" }}>Auto-managed</span>
                 </div>
-                <div className="rounded-xl border border-dashed border-[#2a2a2a] bg-[#0a0a0a] p-4 relative">
-                  <span className="absolute top-2 right-2 text-[9px] px-1.5 py-0.5 rounded-full bg-[#DEDBC8]/10 border border-[#DEDBC8]/20" style={{ color: "#DEDBC8" }}>Soon</span>
-                  <Layers className="w-5 h-5 mb-1" style={{ color: "#DEDBC8" }} />
-                  <p className="text-xs font-medium" style={{ color: "#E1E0CC" }}>AI Auto-Rebalance</p>
-                  <p className="text-[10px] text-gray-600 mt-1">Auto-switch to highest yield protocol.</p>
-                </div>
+                {(() => {
+                  const marinBps = onChainState?.marinadeAllocationBps ?? 3000;
+                  const dlmmPct = ((10000 - marinBps) / 100);
+                  const marinPct = marinBps / 100;
+                  return (
+                    <>
+                      <div className="flex gap-1 h-3 rounded-full overflow-hidden bg-[#111]">
+                        <motion.div className="rounded-full" style={{ backgroundColor: "rgba(222,219,200,0.5)", width: `${dlmmPct}%` }}
+                          initial={{ width: 0 }} animate={{ width: `${dlmmPct}%` }} transition={{ duration: 0.5 }} />
+                        <motion.div className="rounded-full" style={{ backgroundColor: "rgba(100,200,150,0.5)", width: `${marinPct}%` }}
+                          initial={{ width: 0 }} animate={{ width: `${marinPct}%` }} transition={{ duration: 0.5, delay: 0.1 }} />
+                      </div>
+                      <div className="flex justify-between text-[10px]">
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: "rgba(222,219,200,0.5)" }} />
+                          <span className="text-gray-400">DLMM LP {dlmmPct.toFixed(0)}%</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: "rgba(100,200,150,0.5)" }} />
+                          <span className="text-gray-400">Marinade Staking {marinPct.toFixed(0)}%</span>
+                        </div>
+                      </div>
+                      <p className="text-[8px] text-gray-600">Cranker auto-rebalances based on real-time yield rates</p>
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Coming soon */}
+              <div className="rounded-xl border border-dashed border-[#2a2a2a] bg-[#0a0a0a] p-4 relative">
+                <span className="absolute top-2 right-2 text-[9px] px-1.5 py-0.5 rounded-full bg-[#DEDBC8]/10 border border-[#DEDBC8]/20" style={{ color: "#DEDBC8" }}>Soon</span>
+                <TrendingUp className="w-5 h-5 mb-1" style={{ color: "#DEDBC8" }} />
+                <p className="text-xs font-medium" style={{ color: "#E1E0CC" }}>Yield Trading</p>
+                <p className="text-[10px] text-gray-600 mt-1">Split into PT + YT. Trade future yield.</p>
               </div>
             </motion.div>
           )}
