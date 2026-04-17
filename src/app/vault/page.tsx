@@ -633,6 +633,61 @@ export default function VaultPage() {
     }
   };
 
+  const handleClaimFees = async () => {
+    if (!publicKey || !signTransaction) return;
+    setBusy(true);
+    const toastId = toast.loading("Harvesting DLMM fees...");
+    try {
+      const [vaultAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from("vault-authority"), LP_VAULT_CONFIG.toBuffer()], LP_VAULT_PROGRAM_ID);
+
+      const dlmm = getDlmmAccounts(POSITION_LOWER_BIN_ID, POSITION_WIDTH);
+
+      const vaultUsdcAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, vaultAuthority, true, TOKEN_PROGRAM_ID);
+      const vaultWsolAta = getAssociatedTokenAddressSync(WSOL_MINT, vaultAuthority, true, TOKEN_PROGRAM_ID);
+
+      const data = disc("claim_fees");
+
+      const tx = new Transaction();
+      tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }));
+      tx.add({ programId: LP_VAULT_PROGRAM_ID, keys: [
+        { pubkey: publicKey, isSigner: true, isWritable: true },
+        { pubkey: USDC_DEVNET_MINT, isSigner: false, isWritable: false },
+        { pubkey: WSOL_MINT, isSigner: false, isWritable: false },
+        { pubkey: LP_VAULT_CONFIG, isSigner: false, isWritable: true },
+        { pubkey: vaultAuthority, isSigner: false, isWritable: false },
+        { pubkey: DLMM_POSITION, isSigner: false, isWritable: true },
+        { pubkey: DEMO_POOL_ADDRESS, isSigner: false, isWritable: true },
+        { pubkey: dlmm.binArrayLower, isSigner: false, isWritable: true },
+        { pubkey: dlmm.binArrayUpper, isSigner: false, isWritable: true },
+        { pubkey: DLMM_RESERVE_X, isSigner: false, isWritable: true },
+        { pubkey: DLMM_RESERVE_Y, isSigner: false, isWritable: true },
+        { pubkey: vaultUsdcAta, isSigner: false, isWritable: true },
+        { pubkey: vaultWsolAta, isSigner: false, isWritable: true },
+        { pubkey: USDC_DEVNET_MINT, isSigner: false, isWritable: false },
+        { pubkey: WSOL_MINT, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: dlmm.eventAuthority, isSigner: false, isWritable: false },
+        { pubkey: DLMM_PROGRAM_ID, isSigner: false, isWritable: false },
+      ], data });
+
+      const bh = await connection.getLatestBlockhash();
+      tx.recentBlockhash = bh.blockhash;
+      tx.feePayer = publicKey;
+      const signed = await signTransaction(tx);
+      const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
+      await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
+
+      await refreshOnChainState();
+      toast.success("Fees harvested!", { id: toastId });
+    } catch (err: unknown) {
+      console.error(err);
+      toast.error("Fee harvest failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown error" });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!connected) {
     return (
       <>
@@ -721,34 +776,41 @@ export default function VaultPage() {
                     <span className="text-[8px] px-2 py-0.5 rounded-full bg-[#DEDBC8]/10" style={{ color: "#DEDBC8" }}>Auto-managed by HasYield</span>
                   </div>
                   <div className="relative h-20 rounded-lg bg-[#111] overflow-hidden">
-                    {/* Bins */}
-                    <div className="absolute inset-0 flex items-end px-2 gap-[2px]">
-                      {Array.from({ length: 20 }).map((_, i) => {
-                        const height = 30 + Math.sin(i * 0.5) * 25 + Math.random() * 15;
-                        const inRange = i >= 5 && i <= 14;
+                    {/* Bins — deterministic distribution matching vault position range */}
+                    <div className="absolute inset-0 flex items-end px-2 gap-[1px]">
+                      {Array.from({ length: 35 }).map((_, i) => {
+                        const binOffset = i - 17; // center around active bin
+                        const isActive = binOffset === 0;
+                        const distFromActive = Math.abs(binOffset);
+                        const base = isActive ? 90 : Math.max(20, 75 - distFromActive * 2);
                         return (
                           <motion.div
                             key={i}
                             className="flex-1 rounded-t-sm"
-                            style={{ backgroundColor: inRange ? "rgba(222,219,200,0.4)" : "rgba(222,219,200,0.08)" }}
+                            style={{
+                              backgroundColor: isActive
+                                ? "rgba(222,219,200,0.8)"
+                                : "rgba(222,219,200,0.35)",
+                            }}
                             initial={{ height: 0 }}
-                            animate={{ height: `${height}%` }}
-                            transition={{ delay: i * 0.03, duration: 0.4 }}
+                            animate={{ height: `${base}%` }}
+                            transition={{ delay: i * 0.015, duration: 0.3 }}
                           />
                         );
                       })}
                     </div>
-                    {/* Current price marker */}
-                    <motion.div className="absolute top-0 bottom-0 w-[2px] bg-[#DEDBC8]" style={{ left: "47%" }}
+                    {/* Active price marker */}
+                    <motion.div className="absolute top-0 bottom-0 w-[2px] bg-[#DEDBC8]" style={{ left: "50%" }}
                       initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}>
                       <div className="absolute -top-1 -left-1 w-2 h-2 rounded-full bg-[#DEDBC8]" />
                     </motion.div>
                   </div>
                   <div className="flex justify-between mt-2 text-[10px] text-gray-500">
-                    <span>${rangeMin}</span>
-                    <span className="text-gray-400">Current: ${pool ? pool.activePrice.toFixed(2) : "148.32"}</span>
-                    <span>${rangeMax}</span>
+                    <span>Bin {POSITION_LOWER_BIN_ID}</span>
+                    <span className="text-gray-400">Active: Bin {ACTIVE_ID}</span>
+                    <span>Bin {POSITION_LOWER_BIN_ID + POSITION_WIDTH - 1}</span>
                   </div>
+                  <p className="text-[8px] text-gray-600 text-center mt-1">Simulated distribution — bins centered on active price</p>
                 </div>
 
                 {/* Pool stats */}
@@ -764,6 +826,7 @@ export default function VaultPage() {
                     </div>
                   ))}
                 </div>
+                <p className="text-[9px] text-gray-600 text-center py-1">Reference data from mainnet SOL/USDC pool</p>
               </div>
 
               {/* Deposit form */}
@@ -853,7 +916,7 @@ export default function VaultPage() {
                     <div className="rounded-xl bg-[#DEDBC8]/5 border border-[#DEDBC8]/10 p-4 flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <img src="/logo.png" alt="HasYield" className="w-8 h-8 rounded-full" />
-                        <span className="text-sm font-medium" style={{ color: "#DEDBC8" }}>Combined effective APY</span>
+                        <span className="text-sm font-medium" style={{ color: "#DEDBC8" }}>Est. Combined APY</span>
                       </div>
                       <span className="text-xl font-bold text-gradient-cream">
                         {((apy + (parseFloat(depositY) > 0 ? bestStaking.rate * MARINADE_ROUTE_PERCENT : 0) + (parseFloat(depositX) > 0 ? bestLending.rate * 0.3 : 0)) * 100).toFixed(1)}%
@@ -887,6 +950,7 @@ export default function VaultPage() {
                   <p className="text-[10px] text-gray-500 mt-1">
                     {(combinedApy * 100).toFixed(1)}% combined APY on ${positionValue.toFixed(2)}
                   </p>
+                  <p className="text-[8px] text-gray-600">(APY estimated from mainnet reference rates)</p>
                 </div>
 
                 {/* Yield source cards */}
@@ -906,7 +970,7 @@ export default function VaultPage() {
                   <YieldSourceCard
                     logo="https://solend.fi/favicon.ico"
                     tokenLogos={["https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png"]}
-                    label="Lending" source="Solend (soon)"
+                    label="Lending" source="HasYield Pool"
                     rate={bestLending.rate} baseValue={0} platformFee={0.1}
                   />
                 </div>
@@ -930,9 +994,12 @@ export default function VaultPage() {
               />
 
               {/* Actions */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <Button variant="outline" size="lg" onClick={handleWithdrawPosition} className="text-xs">
                   Withdraw
+                </Button>
+                <Button variant="outline" size="lg" onClick={handleClaimFees} className="text-xs">
+                  <TrendingUp className="w-3 h-3 mr-1" /> Harvest Fees
                 </Button>
                 <Button size="lg" onClick={handleCollateralize} className="text-xs">
                   <Lock className="w-3 h-3 mr-1" /> Borrow Against It

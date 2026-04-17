@@ -12,6 +12,7 @@ export interface PoolInfo {
   volume24h: number;
   fees24h: number;
   apy: number;
+  isReference: boolean; // true when data is from mainnet reference, not actual devnet pool
 }
 
 let cachedPool: PoolInfo | null = null;
@@ -46,6 +47,7 @@ export async function getPoolInfo(): Promise<PoolInfo> {
           volume24h: solUsdc.trade_volume_24h || 842_000,
           fees24h: solUsdc.fees_24h || 4_200,
           apy: solUsdc.apr ? solUsdc.apr / 100 : 0.35,
+          isReference: true,
         };
         cacheTime = Date.now();
         return cachedPool;
@@ -66,6 +68,7 @@ export async function getPoolInfo(): Promise<PoolInfo> {
     volume24h: 842_000,
     fees24h: 4_200,
     apy: 0.35,
+    isReference: true,
   };
   cacheTime = Date.now();
   return cachedPool;
