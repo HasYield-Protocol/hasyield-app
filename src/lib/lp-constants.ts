@@ -26,8 +26,9 @@ export const POSITION_LOWER_BIN_ID = -34;
 export const POSITION_WIDTH = 69;
 export const ACTIVE_ID = 0;
 
-// Lending pool (hyLP collateral, USDC borrow)
-export const LENDING_POOL = new PublicKey("AGWpvCjV3sHwkNWLtyT2837URzWmGNGffa5W4eYg1kHR");
+// Lending pool (hyLP collateral, test USDC borrow)
+export const LENDING_POOL = new PublicKey("ATqRiY6Ug65qZaeunp9sbQwGCV9aCqAmgJHo7i62MHke");
+export const TEST_USDC_MINT = new PublicKey("EhdjGXnVoVyvCEvbZA421VGZ4PxE1aVWU4RiT8dpb51h");
 
 // Marinade Finance
 export const MARINADE_PROGRAM_ID = new PublicKey("MarBmsSgKXdrN1egZf5sqe1TMai9K1rChYNDJgjq7aD");

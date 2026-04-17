@@ -22,7 +22,7 @@ import {
   USDC_DEVNET_MINT, WSOL_MINT, DLMM_PROGRAM_ID, DEMO_POOL_ADDRESS,
   DLMM_POSITION, DLMM_RESERVE_X, DLMM_RESERVE_Y,
   POSITION_LOWER_BIN_ID, POSITION_WIDTH, ACTIVE_ID,
-  LENDING_PROGRAM_ID, LENDING_POOL,
+  LENDING_PROGRAM_ID, LENDING_POOL, TEST_USDC_MINT,
 } from "@/lib/lp-constants";
 import { getDlmmAccounts, dlmmComputeBudget } from "@/lib/dlmm-helpers";
 import {
@@ -31,6 +31,7 @@ import {
 import {
   MARINADE_PROGRAM_ID, MARINADE_STATE, MSOL_MINT, LIQ_POOL_MSOL_LEG,
 } from "@/lib/lp-constants";
+import { readVaultState, type VaultState } from "@/lib/on-chain-reader";
 
 function disc(name: string): Buffer {
   return Buffer.from(sha256(`global:${name}`).slice(0, 8));
@@ -55,6 +56,9 @@ export default function VaultPage() {
   const [borrowed, setBorrowed] = useState(0);
   const [rangeMin] = useState(120);
   const [rangeMax] = useState(180);
+
+  // On-chain state reader
+  const [onChainState, setOnChainState] = useState<VaultState | null>(null);
 
   // Yield routing config — these rates come from real APIs where possible
   const MARINADE_ROUTE_PERCENT = 0.3; // 30% of SOL routes to Marinade
@@ -86,6 +90,66 @@ export default function VaultPage() {
       return () => clearInterval(interval);
     }
   }, [stage, positionValue, combinedApy]);
+
+  // Poll on-chain state every 15s when wallet is connected
+  useEffect(() => {
+    if (!connected || !publicKey) {
+      setOnChainState(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchState = async () => {
+      try {
+        const state = await readVaultState(connection, publicKey);
+        if (!cancelled) {
+          setOnChainState(state);
+
+          // Sync UI state from on-chain data if user has a position
+          if (state.userHylpBalance > 0 || state.collateralDeposited > 0) {
+            // Compute position value from vault shares
+            const userShares = state.userHylpBalance + state.collateralDeposited;
+            if (state.totalShares > 0) {
+              const shareRatio = userShares / state.totalShares;
+              const usdcValue = (state.totalDepositedX / 1e6) * shareRatio;
+              const solValue = (state.totalDepositedY / 1e9) * shareRatio;
+              setPositionValue(usdcValue + solValue);
+            }
+
+            // Determine stage from on-chain state
+            if (state.borrowedAmount > 0) {
+              setBorrowed(state.borrowedAmount / 1e6);
+              setStage("borrowed");
+            } else if (state.collateralDeposited > 0) {
+              setStage("collateral");
+            } else if (state.userHylpBalance > 0) {
+              setStage("position");
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to read on-chain state:", err);
+      }
+    };
+
+    fetchState();
+    const interval = setInterval(fetchState, 15_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [connected, publicKey, connection]);
+
+  // Helper to refresh on-chain state after a tx
+  const refreshOnChainState = async () => {
+    if (!publicKey) return;
+    try {
+      const state = await readVaultState(connection, publicKey);
+      setOnChainState(state);
+      return state;
+    } catch (err) {
+      console.error("Failed to refresh on-chain state:", err);
+      return null;
+    }
+  };
 
   const handleDeposit = async () => {
     if (!publicKey || !signTransaction) return;
@@ -185,7 +249,16 @@ export default function VaultPage() {
       const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
       await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
 
-      setPositionValue(x + y);
+      // Refresh on-chain state after deposit
+      const freshState = await refreshOnChainState();
+      if (freshState && freshState.userHylpBalance > 0 && freshState.totalShares > 0) {
+        const shareRatio = freshState.userHylpBalance / freshState.totalShares;
+        const usdcVal = (freshState.totalDepositedX / 1e6) * shareRatio;
+        const solVal = (freshState.totalDepositedY / 1e9) * shareRatio;
+        setPositionValue(usdcVal + solVal);
+      } else {
+        setPositionValue(x + y); // fallback to simulated
+      }
       setStage("position");
       toast.success("Deposited into Meteora DLMM! hyLP minted.", { id: toastId });
 
@@ -252,9 +325,6 @@ export default function VaultPage() {
     } catch (err: unknown) {
       console.error(err);
       toast.error("Deposit failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown error" });
-      // Fallback to simulated for demo
-      setPositionValue(x + y);
-      setStage("position");
     } finally {
       setBusy(false);
     }
@@ -309,12 +379,12 @@ export default function VaultPage() {
       const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
       await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
 
+      await refreshOnChainState();
       setStage("collateral");
       toast.success("hyLP deposited as collateral!", { id: toastId });
     } catch (err: unknown) {
       console.error(err);
       toast.error("Collateralize failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown" });
-      setStage("collateral"); // fallback for demo
     } finally {
       setBusy(false);
     }
@@ -334,14 +404,14 @@ export default function VaultPage() {
       const [loanPosition] = PublicKey.findProgramAddressSync(
         [Buffer.from("loan"), LENDING_POOL.toBuffer(), publicKey.toBuffer()], LENDING_PROGRAM_ID);
 
-      const poolBorrowAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, poolAuthority, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
-      const userBorrowAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const poolBorrowAta = getAssociatedTokenAddressSync(TEST_USDC_MINT, poolAuthority, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const userBorrowAta = getAssociatedTokenAddressSync(TEST_USDC_MINT, publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
 
       const borrowLamports = Math.floor(amt * 1e6); // USDC 6 decimals
 
       const tx = new Transaction();
       if (!(await connection.getAccountInfo(userBorrowAta))) {
-        tx.add(createAssociatedTokenAccountInstruction(publicKey, userBorrowAta, publicKey, USDC_DEVNET_MINT, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID));
+        tx.add(createAssociatedTokenAccountInstruction(publicKey, userBorrowAta, publicKey, TEST_USDC_MINT, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID));
       }
 
       const data = Buffer.alloc(8 + 8);
@@ -350,7 +420,7 @@ export default function VaultPage() {
 
       tx.add({ programId: LENDING_PROGRAM_ID, keys: [
         { pubkey: publicKey, isSigner: true, isWritable: true },
-        { pubkey: USDC_DEVNET_MINT, isSigner: false, isWritable: false },
+        { pubkey: TEST_USDC_MINT, isSigner: false, isWritable: false },
         { pubkey: LENDING_POOL, isSigner: false, isWritable: true },
         { pubkey: loanPosition, isSigner: false, isWritable: true },
         { pubkey: poolAuthority, isSigner: false, isWritable: false },
@@ -366,17 +436,18 @@ export default function VaultPage() {
       const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
       await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
 
-      setBorrowed(amt);
+      const freshBorrow = await refreshOnChainState();
+      if (freshBorrow && freshBorrow.borrowedAmount > 0) {
+        setBorrowed(freshBorrow.borrowedAmount / 1e6);
+      } else {
+        setBorrowed(amt); // fallback
+      }
       setBorrowAmount("");
       setStage("borrowed");
       toast.success(`Borrowed ${amt} USDC!`, { id: toastId });
     } catch (err: unknown) {
       console.error(err);
       toast.error("Borrow failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown" });
-      // Fallback for demo
-      setBorrowed(amt);
-      setBorrowAmount("");
-      setStage("borrowed");
     } finally {
       setBusy(false);
     }
@@ -392,8 +463,8 @@ export default function VaultPage() {
       const [loanPosition] = PublicKey.findProgramAddressSync(
         [Buffer.from("loan"), LENDING_POOL.toBuffer(), publicKey.toBuffer()], LENDING_PROGRAM_ID);
 
-      const poolBorrowAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, poolAuthority, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
-      const userBorrowAta = getAssociatedTokenAddressSync(USDC_DEVNET_MINT, publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const poolBorrowAta = getAssociatedTokenAddressSync(TEST_USDC_MINT, poolAuthority, true, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
+      const userBorrowAta = getAssociatedTokenAddressSync(TEST_USDC_MINT, publicKey, false, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID);
 
       const repayLamports = Math.floor(borrowed * 1e6);
 
@@ -404,7 +475,7 @@ export default function VaultPage() {
       const tx = new Transaction();
       tx.add({ programId: LENDING_PROGRAM_ID, keys: [
         { pubkey: publicKey, isSigner: true, isWritable: true },
-        { pubkey: USDC_DEVNET_MINT, isSigner: false, isWritable: false },
+        { pubkey: TEST_USDC_MINT, isSigner: false, isWritable: false },
         { pubkey: LENDING_POOL, isSigner: false, isWritable: true },
         { pubkey: loanPosition, isSigner: false, isWritable: true },
         { pubkey: userBorrowAta, isSigner: false, isWritable: true },
@@ -420,14 +491,13 @@ export default function VaultPage() {
       const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
       await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
 
+      await refreshOnChainState();
       setBorrowed(0);
       setStage("collateral");
       toast.success("Loan repaid!", { id: toastId });
     } catch (err: unknown) {
       console.error(err);
       toast.error("Repay failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown" });
-      setBorrowed(0);
-      setStage("collateral");
     } finally {
       setBusy(false);
     }
@@ -473,12 +543,12 @@ export default function VaultPage() {
       const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
       await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
 
+      await refreshOnChainState();
       setStage("position");
       toast.success("Collateral withdrawn!", { id: toastId });
     } catch (err: unknown) {
       console.error(err);
       toast.error("Withdraw collateral failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown" });
-      setStage("position");
     } finally {
       setBusy(false);
     }
@@ -550,6 +620,7 @@ export default function VaultPage() {
       const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: true });
       await connection.confirmTransaction({ signature: sig, ...bh }, "confirmed");
 
+      await refreshOnChainState();
       setPositionValue(0);
       setFeesEarned(0);
       setStage("pool");
@@ -557,10 +628,6 @@ export default function VaultPage() {
     } catch (err: unknown) {
       console.error(err);
       toast.error("Withdraw failed", { id: toastId, description: err instanceof Error ? err.message.slice(0, 120) : "Unknown error" });
-      // Fallback for demo
-      setPositionValue(0);
-      setFeesEarned(0);
-      setStage("pool");
     } finally {
       setBusy(false);
     }
@@ -833,8 +900,8 @@ export default function VaultPage() {
                   <YieldSourceCard
                     logo="https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So/logo.png"
                     tokenLogos={["https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png"]}
-                    label="Staking" source="Marinade (30% SOL)"
-                    rate={bestStaking.rate} baseValue={positionValue * MARINADE_ROUTE_PERCENT} platformFee={0.05}
+                    label="Staking" source={`Marinade${onChainState?.vaultMsolBalance ? ` (${(onChainState.vaultMsolBalance / 1e9).toFixed(4)} mSOL)` : " (30% SOL)"}`}
+                    rate={bestStaking.rate} baseValue={onChainState?.vaultMsolBalance ? onChainState.vaultMsolBalance / 1e9 : positionValue * MARINADE_ROUTE_PERCENT} platformFee={0.05}
                   />
                   <YieldSourceCard
                     logo="https://solend.fi/favicon.ico"
@@ -914,7 +981,7 @@ export default function VaultPage() {
                 <div className="rounded-xl bg-[#111] p-3">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[10px] text-gray-500">Borrow Amount</span>
-                    <span className="text-[10px] text-gray-500">Max: ${(positionValue * 0.5).toFixed(2)}</span>
+                    <span className="text-[10px] text-gray-500">Max: ${(onChainState?.collateralDeposited ? (onChainState.collateralDeposited / 1e9) * 0.5 : positionValue * 0.5).toFixed(2)}</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <input type="text" inputMode="decimal" value={borrowAmount} onChange={e => { const v = e.target.value; if (/^\d*\.?\d*$/.test(v)) setBorrowAmount(v); }} placeholder="0.00"
@@ -1000,7 +1067,7 @@ export default function VaultPage() {
               <div className="rounded-2xl border border-[#1a1a1a] bg-[#0a0a0a] p-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-500">Outstanding Loan</span>
-                  <span className="text-sm font-medium tabular-nums" style={{ color: "#E1E0CC" }}>${borrowed.toFixed(2)} USDC</span>
+                  <span className="text-sm font-medium tabular-nums" style={{ color: "#E1E0CC" }}>${(onChainState?.borrowedAmount ? onChainState.borrowedAmount / 1e6 : borrowed).toFixed(2)} USDC</span>
                 </div>
                 <Button className="w-full" size="lg" onClick={handleRepay}>
                   Repay & Unlock Position
