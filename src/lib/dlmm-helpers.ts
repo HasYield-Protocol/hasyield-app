@@ -3,10 +3,22 @@ import { DLMM_PROGRAM_ID, DEMO_POOL_ADDRESS } from "./lp-constants";
 
 const MAX_BIN_PER_ARRAY = 70;
 
+/** Write a signed 64-bit int as little-endian into an 8-byte buffer (two's complement). */
+function writeI64LE(value: bigint): Buffer {
+  const mask = (1n << 64n) - 1n;
+  const unsigned = value < 0n ? (value + (1n << 64n)) & mask : value & mask;
+  const buf = Buffer.alloc(8);
+  let v = unsigned;
+  for (let i = 0; i < 8; i++) {
+    buf[i] = Number(v & 0xffn);
+    v >>= 8n;
+  }
+  return buf;
+}
+
 /** Derive DLMM bin array PDA — uses two's complement i64 LE for negative indices */
 export function deriveBinArrayPda(lbPair: PublicKey, index: number): PublicKey {
-  const indexBuf = Buffer.alloc(8);
-  indexBuf.writeBigInt64LE(BigInt(index));
+  const indexBuf = writeI64LE(BigInt(index));
   const [addr] = PublicKey.findProgramAddressSync(
     [Buffer.from("bin_array"), lbPair.toBuffer(), indexBuf],
     DLMM_PROGRAM_ID
