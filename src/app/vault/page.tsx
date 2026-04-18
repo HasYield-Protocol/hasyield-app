@@ -11,6 +11,10 @@ import { useVaultActions } from "@/hooks/use-vault-actions";
 import { getMarinadeApy } from "@/lib/marinade-apy";
 import { getPoolInfo, type PoolInfo } from "@/lib/meteora";
 import { POSITION_LOWER_BIN_ID, POSITION_WIDTH, ACTIVE_ID } from "@/lib/lp-constants";
+import {
+  fetchCrankerStatus, formatTimeAgo, formatTimeUntil,
+  type CrankerStatus,
+} from "@/lib/cranker-status";
 
 const SOL_PRICE_USD = 155;
 
@@ -486,6 +490,14 @@ function Chapter02Rehypothecate({
   const usdcInVault = state ? state.totalDepositedX / 1e6 : 0;
 
   const [showSankey, setShowSankey] = useState(false);
+  const [cranker, setCranker] = useState<CrankerStatus | null>(null);
+  useEffect(() => {
+    let cancel = false;
+    const load = () => fetchCrankerStatus().then((s) => { if (!cancel) setCranker(s); });
+    load();
+    const id = setInterval(load, 60_000);
+    return () => { cancel = true; clearInterval(id); };
+  }, []);
 
   return (
     <section>
@@ -507,28 +519,7 @@ function Chapter02Rehypothecate({
           >
             Your capital flow
           </div>
-          <div className="flex items-center gap-2">
-            <span
-              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] uppercase tracking-[0.15em]"
-              style={{
-                fontFamily: "var(--font-data)",
-                border: "1px solid rgba(141,211,255,0.3)",
-                color: "var(--hy-blue)",
-              }}
-            >
-              <span
-                className="w-1.5 h-1.5 rounded-full animate-pulse"
-                style={{ background: "var(--hy-blue)", boxShadow: "0 0 6px var(--hy-blue)" }}
-              />
-              AI-routed · 6h cadence
-            </span>
-            <span
-              className="text-[10px]"
-              style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
-            >
-              next in 2h 14m
-            </span>
-          </div>
+          <CrankerBadge cranker={cranker} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
@@ -605,6 +596,55 @@ function Chapter02Rehypothecate({
         )}
       </Panel>
     </section>
+  );
+}
+
+function CrankerBadge({ cranker }: { cranker: CrankerStatus | null }) {
+  const last = cranker?.last ?? null;
+  const nextEta = cranker?.nextEta ?? null;
+  const live = !!last;
+  const decision = last?.decision;
+  return (
+    <div className="flex items-center gap-2 flex-wrap">
+      <span
+        className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] uppercase tracking-[0.15em]"
+        style={{
+          fontFamily: "var(--font-data)",
+          border: `1px solid ${live ? "rgba(141,211,255,0.3)" : "var(--hy-line-strong)"}`,
+          color: live ? "var(--hy-blue)" : "var(--hy-ink-3)",
+        }}
+      >
+        <span
+          className="w-1.5 h-1.5 rounded-full animate-pulse"
+          style={{
+            background: live ? "var(--hy-blue)" : "var(--hy-ink-3)",
+            boxShadow: live ? "0 0 6px var(--hy-blue)" : "none",
+          }}
+        />
+        Cranker · {cranker?.intervalSec ? Math.round(cranker.intervalSec / 3600) : 6}h cadence
+      </span>
+      <span className="text-[10px]" style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}>
+        {last
+          ? `last run ${formatTimeAgo(last.timestamp)}${decision === "rebalanced" ? " · rebalanced" : decision === "skipped" ? " · no change" : decision === "error" ? " · error" : ""}`
+          : "awaiting first run"}
+      </span>
+      {nextEta && (
+        <span className="text-[10px]" style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}>
+          · next in {formatTimeUntil(nextEta)}
+        </span>
+      )}
+      {last?.txSig && (
+        <a
+          href={`https://solscan.io/tx/${last.txSig}?cluster=devnet`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-[10px] underline"
+          style={{ fontFamily: "var(--font-data)", color: "var(--hy-blue)" }}
+        >
+          tx ↗
+        </a>
+      )}
+    </div>
   );
 }
 
