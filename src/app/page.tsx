@@ -90,7 +90,7 @@ export default function LandingPage() {
                 className="w-1.5 h-1.5 rounded-full animate-pulse"
                 style={{ background: "var(--hy-blue)", boxShadow: "0 0 12px var(--hy-blue)" }}
               />
-              Live on Solana · Built on Meteora DLMM
+              LP position composability layer · Solana
             </div>
             <h1
               className="font-medium leading-[0.98] tracking-[-0.03em] mt-6 mb-7"
@@ -100,9 +100,9 @@ export default function LandingPage() {
                 color: "var(--hy-ink)",
               }}
             >
-              <span className="block">Every position</span>
+              <span className="block">Turn passive LPs</span>
               <span className="block">
-                has{" "}
+                into{" "}
                 <em
                   className="not-italic"
                   style={{
@@ -112,17 +112,17 @@ export default function LandingPage() {
                     fontWeight: 400,
                   }}
                 >
-                  yield.
+                  productive capital.
                 </em>
               </span>
-              <span className="block">Now unlock it.</span>
             </h1>
-            <p className="text-[18px] leading-relaxed max-w-[540px] mb-10" style={{ color: "var(--hy-ink-2)" }}>
-              Your DLMM liquidity earns trading fees. HasYield{" "}
-              <strong style={{ color: "var(--hy-ink)", fontWeight: 500 }}>rehypothecates</strong> the idle capital
-              underneath — SOL into liquid staking, USDC into money-market collateral.{" "}
-              <strong style={{ color: "var(--hy-ink)", fontWeight: 500 }}>Three yield streams</strong> on the same
-              dollar.
+            <p className="text-[18px] leading-relaxed max-w-[560px] mb-10" style={{ color: "var(--hy-ink-2)" }}>
+              HasYield is the{" "}
+              <strong style={{ color: "var(--hy-ink)", fontWeight: 500 }}>LP position composability layer</strong>{" "}
+              on Solana. Deposit into a DLMM vault, receive <strong style={{ color: "var(--hy-ink)", fontWeight: 500 }}>hyLP</strong> —
+              a Token-2022 receipt that stays earning fees while it{" "}
+              <strong style={{ color: "var(--hy-ink)", fontWeight: 500 }}>stakes, lends, and collateralizes</strong>.
+              Borrow against it, without ever unwinding the position.
             </p>
             <div className="flex gap-3 items-center flex-wrap">
               <Link
@@ -159,17 +159,21 @@ export default function LandingPage() {
               style={{ borderTop: "1px solid var(--hy-line)" }}
             >
               <LiveStat
-                label="Current best pool"
+                label="hyLP combined APY"
                 value={`${tickerApy.toFixed(1)}%`}
-                sub="SOL/USDC · triple APY"
+                sub="SOL/USDC · fees + stake + lend"
                 accent
               />
               <LiveStat
-                label="SOL staking APY"
-                value={`${(apy * 100).toFixed(2)}%`}
-                sub="via Marinade"
+                label="Borrow against hyLP"
+                value="50%"
+                sub="LTV · Token-2022 transfer hook"
               />
-              <LiveStat label="Yield streams" value="3" sub="LP · staking · lending" />
+              <LiveStat
+                label="Live CPI venues"
+                value="2"
+                sub={`Meteora · Marinade · ${(apy * 100).toFixed(1)}% stake`}
+              />
             </div>
           </div>
 
@@ -353,14 +357,13 @@ function Problem() {
             num="01 · The gap"
             title={
               <>
-                Your bins earn fees.{" "}
+                LPs are frozen capital.{" "}
                 <em style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", color: "var(--hy-cream)" }}>
-                  The capital inside
-                </em>{" "}
-                sits idle.
+                  Until they aren't.
+                </em>
               </>
             }
-            sub="Meteora DLMM bins are on-chain limit orders. They earn concentrated trading fees — but the SOL and USDC inside those bins are static, just sitting there waiting for a trade. Billions of idle capital across every DLMM on Solana."
+            sub="A concentrated liquidity position earns trading fees — and does nothing else. The SOL and USDC inside are locked, un-stakable, un-lendable, un-borrowable. Every LP token on Solana today is a receipt for capital you can't compose with."
           />
         </div>
         <IdleViz />
@@ -438,16 +441,16 @@ function HowItWorks() {
     <section id="how" className="px-8 py-32" style={{ borderTop: "1px solid var(--hy-line)" }}>
       <div className="mx-auto max-w-[1280px]">
         <SectionHead
-          num="02 · The flywheel"
+          num="02 · The primitive"
           title={
             <>
-              Three steps.{" "}
+              One deposit.{" "}
               <em style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", color: "var(--hy-cream)" }}>
-                One capital stack.
+                One composable receipt.
               </em>
             </>
           }
-          sub="Most yield protocols pick one layer. HasYield composes three — concentrated liquidity provision, liquid staking, and on-chain lending — on the same deposited asset."
+          sub="HasYield is a new primitive, not an optimizer. Deposit into a DLMM vault → we mint hyLP (Token-2022 with transfer-hook enforcement). While your position keeps earning LP fees, the underlying SOL stakes and the idle USDC enters a money market. hyLP is borrow-able, composable, and fully backed by the on-chain position."
         />
         <div className="grid md:grid-cols-3 mt-14">
           {steps.map((s, i) => (
@@ -572,16 +575,16 @@ function StackViz() {
 function Features() {
   const feats = [
     {
-      tag: "01 · Rehypothecation",
-      title: "Same dollar, three layers",
-      desc: "Your capital doesn't sit in one place. It's productively deployed across LP provision, liquid staking, and lending — all from one deposit.",
-      bullets: ["Meteora DLMM bins", "Marinade mSOL", "Money-market collateral", "hyLP vault share (Token-2022)"],
+      tag: "01 · The primitive",
+      title: "hyLP: a live LP receipt",
+      desc: "Deposit into a DLMM vault, receive hyLP — a Token-2022 vault share backed 1-for-1 by the underlying position. Unlike a static LP token, hyLP stays productive while it sits in your wallet.",
+      bullets: ["Token-2022 mint", "Transfer-hook enforced lockup", "Backed by live on-chain position", "Redeemable anytime"],
     },
     {
-      tag: "02 · Triple yield",
-      title: "12 – 30% combined APY",
-      desc: "Honest ranges from all three sources. Fees vary with volume, staking is stable, lending tracks utilization.",
-      bullets: ["LP fees 3 – 42%", "Staking 5 – 7%", "Lending 2 – 12%"],
+      tag: "02 · Composability",
+      title: "Borrow, stake, compose",
+      desc: "Lock hyLP as collateral → borrow stablecoins at 50% LTV without unwinding your position. Underlying SOL stakes via Marinade. Underlying USDC enters a money market. Your LP fees keep flowing the whole time.",
+      bullets: ["Borrow against hyLP at 50% LTV", "Meteora DLMM fees on the position", "Marinade staking on idle SOL", "Money-market yield on idle USDC"],
     },
     {
       tag: "03 · Solana-native",
@@ -598,13 +601,13 @@ function Features() {
           num="03 · Why HasYield"
           title={
             <>
-              Built for{" "}
+              Not possible{" "}
               <em style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", color: "var(--hy-cream)" }}>
-                productive capital.
+                on EVM.
               </em>
             </>
           }
-          sub="A composability layer, not another DLMM. HasYield sits on top of Meteora, Marinade, and money markets — coordinating them into a single vault share."
+          sub="DLMM bins are a Solana-native primitive. Token-2022 transfer hooks enforce collateral lockup at the token layer — no custody wrapper, no escrow contract, no synthetic. HasYield is a composability layer: real CPI into Meteora and Marinade today, routing to more venues as the cranker whitelists them."
         />
         <div
           className="grid md:grid-cols-3 rounded-2xl overflow-hidden mt-14"
