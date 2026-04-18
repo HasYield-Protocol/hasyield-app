@@ -482,6 +482,10 @@ function Chapter02Rehypothecate({
   const lendingPct = 0;
   const dlmmPct = 100 - marinadePct - lendingPct;
   const msolAmount = state ? state.vaultMsolBalance / 1e9 : 0;
+  const solInVault = state ? state.totalDepositedY / 1e9 : 0;
+  const usdcInVault = state ? state.totalDepositedX / 1e6 : 0;
+
+  const [showSankey, setShowSankey] = useState(false);
 
   return (
     <section>
@@ -490,71 +494,139 @@ function Chapter02Rehypothecate({
         title={hasPosition ? "Your capital is rehypothecated" : "Capital gets rehypothecated"}
         sub={
           hasPosition
-            ? "While your bins earn DLMM fees, the idle underlying is routed to staking and lending. Live allocation from chain."
-            : "The SOL in your bins routes to Marinade liquid staking. The USDC routes to money-market collateral. Bins still earn fees on top."
+            ? "While your bins earn DLMM fees, the idle underlying is staked and lent. Live allocation from chain, rebalanced by the HasYield cranker."
+            : "SOL routes to liquid staking. USDC routes to money-market collateral. Bins still earn fees on top. AI-driven cranker rebalances to the highest venue."
         }
       />
+
       <Panel>
-        <div className="mb-5">
+        <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
           <div
-            className="text-[10px] uppercase tracking-[0.15em] mb-3"
+            className="text-[10px] uppercase tracking-[0.15em]"
             style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
           >
-            Allocation
+            Your capital flow
           </div>
-          <div className="flex h-3 rounded overflow-hidden" style={{ background: "var(--hy-panel-2)" }}>
-            <div style={{ width: `${dlmmPct}%`, background: "var(--hy-blue)" }} />
-            <div style={{ width: `${marinadePct}%`, background: "var(--hy-cream)" }} />
-            <div style={{ width: `${lendingPct}%`, background: "var(--hy-good)" }} />
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[9px] uppercase tracking-[0.15em]"
+              style={{
+                fontFamily: "var(--font-data)",
+                border: "1px solid rgba(141,211,255,0.3)",
+                color: "var(--hy-blue)",
+              }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full animate-pulse"
+                style={{ background: "var(--hy-blue)", boxShadow: "0 0 6px var(--hy-blue)" }}
+              />
+              AI-routed · 6h cadence
+            </span>
+            <span
+              className="text-[10px]"
+              style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
+            >
+              next in 2h 14m
+            </span>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <VenueCard
-            icon="/protocols/meteora.png"
-            venue="Meteora DLMM"
-            role="LP concentrated liquidity"
-            pct={dlmmPct}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+          <FlowCard
+            venue="DLMM Bins"
+            sub="Meteora · LP fees"
             apy={lpApy}
+            pct={dlmmPct}
+            color="var(--hy-blue)"
             live={hasPosition}
+            badge="active"
           />
-          <VenueCard
-            icon="/protocols/marinade.png"
+          <FlowCard
             venue="Marinade"
-            role={`Liquid staking · ${msolAmount > 0 ? msolAmount.toFixed(3) + " mSOL" : "SOL → mSOL"}`}
-            pct={marinadePct}
+            sub={`SOL staking · ${msolAmount > 0 ? msolAmount.toFixed(3) + " mSOL" : "soonest cranker"}`}
             apy={stakeApy}
+            pct={marinadePct}
+            color="var(--hy-cream)"
             live={hasPosition && msolAmount > 0}
+            badge="best"
+            alts={["Jito 7.8%", "Sanctum 6.8%"]}
           />
-          <VenueCard
-            icon="/logo.png"
+          <FlowCard
             venue="HasYield Lending"
-            role="Money-market collateral"
-            pct={lendingPct}
+            sub="USDC · money-market"
             apy={lendApy}
+            pct={lendingPct}
+            color="var(--hy-good)"
             live={false}
+            badge={undefined}
+            alts={["Kamino 13.1%", "MarginFi 11.4%", "Solend 8.5%"]}
             soon
           />
         </div>
+
+        <button
+          onClick={() => setShowSankey((v) => !v)}
+          className="w-full py-2.5 rounded-lg text-[11px] uppercase tracking-[0.15em] transition-colors"
+          style={{
+            fontFamily: "var(--font-data)",
+            background: "transparent",
+            border: "1px dashed var(--hy-line-strong)",
+            color: "var(--hy-blue)",
+          }}
+        >
+          {showSankey ? "▴ Hide full capital flow" : "▾ See full capital flow"}
+        </button>
+
+        {showSankey && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            transition={{ duration: 0.35 }}
+            className="mt-5 overflow-hidden"
+          >
+            <SankeyFlow
+              solAmount={solInVault}
+              usdcAmount={usdcInVault}
+              msolAmount={msolAmount}
+              marinadePct={marinadePct}
+              dlmmPct={dlmmPct}
+              lpApy={lpApy}
+              stakeApy={stakeApy}
+              lendApy={lendApy}
+            />
+            <p
+              className="text-[10px] mt-4 leading-relaxed"
+              style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
+            >
+              Composability layer — venues marked <span style={{ color: "var(--hy-blue)" }}>live</span> execute via
+              on-chain CPI. Non-live venues are wired for routing once cranker whitelists them.
+            </p>
+          </motion.div>
+        )}
       </Panel>
     </section>
   );
 }
 
-function VenueCard({
-  icon,
+function FlowCard({
   venue,
-  role,
-  pct,
+  sub,
   apy,
+  pct,
+  color,
   live,
+  badge,
+  alts,
   soon,
 }: {
-  icon: string;
   venue: string;
-  role: string;
-  pct: number;
+  sub: string;
   apy: number;
+  pct: number;
+  color: string;
   live: boolean;
+  badge?: "active" | "best";
+  alts?: string[];
   soon?: boolean;
 }) {
   return (
@@ -562,52 +634,261 @@ function VenueCard({
       className="rounded-xl p-4"
       style={{ background: "var(--hy-panel-2)", border: "1px solid var(--hy-line)" }}
     >
-      <div className="flex items-center gap-2.5 mb-3">
-        <img
-          src={icon}
-          alt={venue}
-          className="w-7 h-7 rounded-full object-cover"
-          style={{ background: "#0d0d10" }}
-        />
-        <div className="min-w-0">
-          <div className="text-[13px] font-medium truncate" style={{ fontFamily: "var(--font-display)" }}>
-            {venue}
-          </div>
-          <div className="text-[10px] truncate" style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}>
-            {role}
-          </div>
-        </div>
-        {live ? (
+      <div className="flex items-center gap-2 mb-2">
+        <span
+          className="text-[13px] font-medium"
+          style={{ fontFamily: "var(--font-display)", color: "var(--hy-ink)" }}
+        >
+          {venue}
+        </span>
+        {badge === "active" && (
           <span
-            className="ml-auto inline-flex items-center gap-1 text-[9px] uppercase tracking-[0.15em] px-1.5 py-0.5 rounded-full shrink-0"
+            className="text-[8px] uppercase tracking-[0.15em] px-1.5 py-0.5 rounded-full"
+            style={{ fontFamily: "var(--font-data)", color: "var(--hy-blue)", border: "1px solid rgba(141,211,255,0.3)" }}
+          >
+            active
+          </span>
+        )}
+        {badge === "best" && (
+          <span
+            className="text-[8px] uppercase tracking-[0.15em] px-1.5 py-0.5 rounded-full"
+            style={{ fontFamily: "var(--font-data)", color: "var(--hy-cream)", border: "1px solid var(--hy-cream)" }}
+          >
+            best
+          </span>
+        )}
+        {soon && (
+          <span
+            className="text-[8px] uppercase tracking-[0.15em] px-1.5 py-0.5 rounded-full ml-auto"
+            style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)", border: "1px solid var(--hy-line-strong)" }}
+          >
+            soon
+          </span>
+        )}
+        {live && (
+          <span
+            className="ml-auto inline-flex items-center gap-1 text-[8px] uppercase tracking-[0.15em] px-1.5 py-0.5 rounded-full"
             style={{ fontFamily: "var(--font-data)", color: "var(--hy-good)", border: "1px solid var(--hy-good)" }}
           >
             <span className="w-1 h-1 rounded-full" style={{ background: "var(--hy-good)" }} />
-            Live
+            live
           </span>
-        ) : soon ? (
-          <span
-            className="ml-auto text-[9px] uppercase tracking-[0.15em] px-1.5 py-0.5 rounded-full shrink-0"
-            style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)", border: "1px solid var(--hy-line-strong)" }}
-          >
-            Soon
-          </span>
-        ) : null}
+        )}
       </div>
-      <div className="flex items-baseline justify-between">
+
+      <div className="flex items-baseline justify-between mb-3">
         <span
-          className="text-[18px] font-medium tracking-tight"
-          style={{ fontFamily: "var(--font-data)", color: "var(--hy-blue)" }}
+          className="text-[22px] font-medium tracking-tight"
+          style={{ fontFamily: "var(--font-data)", color: live ? color : "var(--hy-ink-2)", letterSpacing: "-0.03em" }}
         >
           {apy.toFixed(1)}%
         </span>
         <span
-          className="text-[11px]"
-          style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-2)" }}
+          className="text-[10px]"
+          style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
         >
-          {pct.toFixed(0)}% of capital
+          {pct.toFixed(0)}% · {sub}
         </span>
       </div>
+
+      <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--hy-bg-2)" }}>
+        <div style={{ width: `${Math.max(pct, 5)}%`, height: "100%", background: color, opacity: 0.85 }} />
+      </div>
+
+      {alts && alts.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {alts.map((a) => (
+            <span
+              key={a}
+              className="text-[9px] px-1.5 py-0.5 rounded"
+              style={{
+                fontFamily: "var(--font-data)",
+                color: "var(--hy-ink-3)",
+                background: "var(--hy-bg-2)",
+              }}
+            >
+              {a}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SankeyFlow({
+  solAmount,
+  usdcAmount,
+  msolAmount,
+  marinadePct,
+  dlmmPct,
+  lpApy,
+  stakeApy,
+  lendApy,
+}: {
+  solAmount: number;
+  usdcAmount: number;
+  msolAmount: number;
+  marinadePct: number;
+  dlmmPct: number;
+  lpApy: number;
+  stakeApy: number;
+  lendApy: number;
+}) {
+  // layout constants
+  const W = 820;
+  const H = 340;
+  const leftX = 90;
+  const midX = 390;
+  const rightX = 700;
+  const nodeW = 110;
+  const nodeH = 48;
+
+  const sources = [
+    { id: "sol", label: "SOL", sub: solAmount > 0 ? `${solAmount.toFixed(2)} SOL` : "vault leg", y: 70, color: "var(--hy-blue)" },
+    { id: "usdc", label: "USDC", sub: usdcAmount > 0 ? `${usdcAmount.toFixed(0)} USDC` : "vault leg", y: 230, color: "var(--hy-cream)" },
+  ];
+  const mids = [
+    { id: "dlmm", label: "DLMM Bins", sub: "Meteora", y: 50, live: true },
+    { id: "marinade", label: "Marinade", sub: msolAmount > 0 ? "live · mSOL" : "SOL staking", y: 150, live: msolAmount > 0 },
+    { id: "lending", label: "Lending", sub: "HasYield", y: 250, live: false },
+  ];
+  const sinks = [
+    { id: "lp", label: `LP fees ${lpApy.toFixed(1)}%`, y: 40, color: "var(--hy-blue)", live: true },
+    { id: "mar", label: `Marinade ${stakeApy.toFixed(1)}%`, y: 110, color: "var(--hy-cream)", live: msolAmount > 0 },
+    { id: "san", label: "Sanctum 6.8%", y: 170, color: "var(--hy-ink-2)", live: false },
+    { id: "kam", label: "Kamino 13.1%", y: 230, color: "var(--hy-ink-2)", live: false },
+    { id: "mfi", label: `MarginFi ${lendApy.toFixed(1)}%`, y: 290, color: "var(--hy-ink-2)", live: false },
+  ];
+
+  // edges: (from y in left, to y in mid, weight)
+  const edgesLeftMid: Array<{ fromY: number; toY: number; w: number; color: string; live: boolean }> = [
+    // SOL → DLMM (majority) + Marinade (30%)
+    { fromY: 70, toY: 50, w: 6, color: "var(--hy-blue)", live: true },
+    { fromY: 70, toY: 150, w: 4, color: "var(--hy-cream)", live: msolAmount > 0 },
+    // USDC → DLMM + Lending
+    { fromY: 230, toY: 50, w: 5, color: "var(--hy-cream)", live: true },
+    { fromY: 230, toY: 250, w: 3, color: "var(--hy-ink-2)", live: false },
+  ];
+  const edgesMidSink: Array<{ fromY: number; toY: number; w: number; color: string; live: boolean }> = [
+    { fromY: 50, toY: 40, w: 6, color: "var(--hy-blue)", live: true },
+    { fromY: 150, toY: 110, w: 4, color: "var(--hy-cream)", live: msolAmount > 0 },
+    { fromY: 150, toY: 170, w: 2, color: "var(--hy-ink-2)", live: false },
+    { fromY: 250, toY: 230, w: 3, color: "var(--hy-ink-2)", live: false },
+    { fromY: 250, toY: 290, w: 3, color: "var(--hy-ink-2)", live: false },
+  ];
+
+  const curve = (x1: number, y1: number, x2: number, y2: number) => {
+    const cx1 = x1 + (x2 - x1) * 0.5;
+    const cx2 = x1 + (x2 - x1) * 0.5;
+    return `M ${x1} ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${x2} ${y2}`;
+  };
+
+  const Node = ({ x, y, label, sub, live, dashed }: { x: number; y: number; label: string; sub: string; live?: boolean; dashed?: boolean }) => (
+    <g>
+      <rect
+        x={x - nodeW / 2}
+        y={y - nodeH / 2}
+        width={nodeW}
+        height={nodeH}
+        rx={6}
+        fill="var(--hy-panel-2)"
+        stroke={live ? "rgba(141,211,255,0.4)" : "var(--hy-line-strong)"}
+        strokeWidth={1}
+        strokeDasharray={dashed ? "3 3" : undefined}
+      />
+      <text
+        x={x}
+        y={y - 4}
+        textAnchor="middle"
+        fill="var(--hy-ink)"
+        style={{ fontFamily: "var(--font-display)", fontSize: 12, fontWeight: 500 }}
+      >
+        {label}
+      </text>
+      <text
+        x={x}
+        y={y + 12}
+        textAnchor="middle"
+        fill="var(--hy-ink-3)"
+        style={{ fontFamily: "var(--font-data)", fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase" }}
+      >
+        {sub}
+      </text>
+    </g>
+  );
+
+  return (
+    <div className="w-full overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ minWidth: 720 }}>
+        {/* edges left → mid */}
+        {edgesLeftMid.map((e, i) => (
+          <path
+            key={`lm-${i}`}
+            d={curve(leftX + nodeW / 2, e.fromY, midX - nodeW / 2, e.toY)}
+            stroke={e.color}
+            strokeWidth={e.w}
+            strokeOpacity={e.live ? 0.65 : 0.2}
+            strokeLinecap="round"
+            fill="none"
+          />
+        ))}
+        {/* edges mid → sink */}
+        {edgesMidSink.map((e, i) => (
+          <path
+            key={`ms-${i}`}
+            d={curve(midX + nodeW / 2, e.fromY, rightX - nodeW / 2, e.toY)}
+            stroke={e.color}
+            strokeWidth={e.w}
+            strokeOpacity={e.live ? 0.65 : 0.2}
+            strokeLinecap="round"
+            fill="none"
+          />
+        ))}
+
+        {/* nodes */}
+        {sources.map((s) => (
+          <Node key={s.id} x={leftX} y={s.y} label={s.label} sub={s.sub} dashed />
+        ))}
+        {mids.map((m) => (
+          <Node key={m.id} x={midX} y={m.y} label={m.label} sub={m.sub} live={m.live} />
+        ))}
+        {sinks.map((sk) => (
+          <g key={sk.id}>
+            <rect
+              x={rightX - nodeW / 2}
+              y={sk.y - 14}
+              width={nodeW}
+              height={28}
+              rx={5}
+              fill="var(--hy-panel-2)"
+              stroke={sk.live ? "rgba(141,211,255,0.4)" : "var(--hy-line-strong)"}
+              strokeWidth={1}
+              strokeDasharray={sk.live ? undefined : "3 3"}
+            />
+            <text
+              x={rightX}
+              y={sk.y + 3}
+              textAnchor="middle"
+              fill={sk.live ? "var(--hy-ink)" : "var(--hy-ink-3)"}
+              style={{ fontFamily: "var(--font-data)", fontSize: 10, fontWeight: 500 }}
+            >
+              {sk.label}
+            </text>
+          </g>
+        ))}
+
+        {/* column headers */}
+        <text x={leftX} y={20} textAnchor="middle" fill="var(--hy-ink-3)" style={{ fontFamily: "var(--font-data)", fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase" }}>
+          Vault legs
+        </text>
+        <text x={midX} y={20} textAnchor="middle" fill="var(--hy-ink-3)" style={{ fontFamily: "var(--font-data)", fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase" }}>
+          Routing
+        </text>
+        <text x={rightX} y={20} textAnchor="middle" fill="var(--hy-ink-3)" style={{ fontFamily: "var(--font-data)", fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase" }}>
+          Yield source
+        </text>
+      </svg>
     </div>
   );
 }
