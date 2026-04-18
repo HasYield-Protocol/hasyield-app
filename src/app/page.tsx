@@ -1,310 +1,822 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { motion, useInView, useScroll, useTransform } from "motion/react";
-import { ArrowRight, ArrowDown, Check, Layers, TrendingUp, Shield, Unlock } from "lucide-react";
+import { useEffect, useState } from "react";
+import { motion } from "motion/react";
 import Link from "next/link";
-import { WordsPullUp, WordsPullUpMultiStyle } from "@/components/words-pull-up";
 import { getMarinadeApy } from "@/lib/marinade-apy";
+import { Coin3D } from "@/components/reactbits/coin-3d";
 
-const NAV_ITEMS = ["Problem", "How", "Features", "Launch"];
+const NAV = [
+  { href: "#problem", label: "Problem" },
+  { href: "#how", label: "How" },
+  { href: "#features", label: "Features" },
+  { href: "#preview", label: "App" },
+];
 
-export default function Home() {
-  const [apy, setApy] = useState(0.05);
-  useEffect(() => { getMarinadeApy().then(setApy); }, []);
+const ORBIT_INNER = [
+  { name: "Meteora", icon: "/protocols/meteora.png" },
+  { name: "Jito", icon: "/protocols/jito.png" },
+  { name: "Kamino", icon: "/protocols/kamino.png" },
+  { name: "Marinade", icon: "/protocols/marinade.png" },
+];
+const ORBIT_OUTER = [
+  { name: "Solend", icon: "/protocols/solend.png" },
+  { name: "MarginFi", icon: "/protocols/marginfi.png" },
+  { name: "Sanctum", icon: "/protocols/sanctum.png" },
+];
+
+export default function LandingPage() {
+  const [apy, setApy] = useState(0.072);
+  const [tickerApy, setTickerApy] = useState(15.8);
+
+  useEffect(() => {
+    getMarinadeApy().then(setApy);
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setTickerApy(14.2 + Math.random() * 2.2);
+    }, 2400);
+    return () => clearInterval(id);
+  }, []);
 
   return (
-    <div className="bg-black overflow-x-hidden">
+    <div className="landing relative overflow-x-hidden" style={{ background: "var(--hy-bg)", color: "var(--hy-ink)" }}>
+      <AmbientBackground />
 
-      {/* ━━━ HERO ━━━ */}
-      <section className="relative h-screen flex flex-col items-center justify-center p-4 md:p-6">
-        <div className="absolute inset-0 bg-noise opacity-[0.06] pointer-events-none" />
-
-        {/* Navbar — sticky */}
-        <div className="fixed top-0 left-1/2 -translate-x-1/2 z-50">
-          <nav className="bg-black/90 backdrop-blur-xl rounded-b-2xl md:rounded-b-3xl px-4 py-2 md:px-8 flex items-center gap-3 sm:gap-6 md:gap-12 lg:gap-14">
-            <Link href="/" className="shrink-0">
-              <img src="/logo.png" alt="HasYield" className="w-7 h-7 sm:w-8 sm:h-8 rounded-full" />
-            </Link>
-            {NAV_ITEMS.map((item) => (
-              <Link key={item} href={item === "Launch" ? "/vault" : `#${item.toLowerCase()}`}
-                className="text-[10px] sm:text-xs md:text-sm transition-colors whitespace-nowrap"
-                style={{ color: "rgba(225,224,204,0.8)" }}
-                onMouseEnter={e => e.currentTarget.style.color = "#E1E0CC"}
-                onMouseLeave={e => e.currentTarget.style.color = "rgba(225,224,204,0.8)"}
-              >{item}</Link>
-            ))}
-          </nav>
-        </div>
-
-        {/* 3D Coin */}
-        <div className="animate-coin mb-8">
-          <img src="/logo.png" alt="HasYield" className="w-36 h-36 sm:w-48 sm:h-48 rounded-full" style={{ boxShadow: "0 0 80px rgba(222,219,200,0.15)" }} />
-        </div>
-        <h1 className="text-5xl sm:text-6xl md:text-7xl font-medium tracking-[-0.04em]" style={{ color: "#E1E0CC" }}>HasYield</h1>
-        <p className="mt-3 text-base sm:text-lg text-gray-400 text-center max-w-lg">
-          Every position has yield. Now unlock it.
-        </p>
-        <motion.p className="mt-2 text-xs text-gray-600 max-w-md text-center" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }}>
-          Concentrated liquidity bin rehypothecation. Your DLMM bins earn trading fees while the underlying assets earn staking + lending yield. Triple yield, same capital.
-        </motion.p>
-        <motion.div className="mt-8" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
-          <Link href="#problem" className="group inline-flex items-center gap-2 hover:gap-3 transition-all bg-[#DEDBC8] rounded-full pl-5 pr-1.5 py-1.5">
-            <span className="text-black font-medium text-sm">See how it works</span>
-            <span className="bg-black rounded-full w-9 h-9 flex items-center justify-center group-hover:scale-110 transition-transform">
-              <ArrowDown className="w-4 h-4" style={{ color: "#E1E0CC" }} />
+      <nav
+        className="sticky top-0 z-50 backdrop-blur-xl"
+        style={{ background: "rgba(8,8,10,0.7)", borderBottom: "1px solid var(--hy-line)" }}
+      >
+        <div className="mx-auto flex max-w-[1280px] items-center justify-between px-8 py-3.5">
+          <Link href="/" className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="" className="w-7 h-7 rounded-full" />
+            <span className="font-medium text-[15px] tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+              HasYield
             </span>
           </Link>
-        </motion.div>
-      </section>
-
-      {/* ━━━ PROBLEM ━━━ */}
-      <AboutSection />
-
-      {/* ━━━ HOW IT WORKS ━━━ */}
-      <section id="how" className="relative min-h-screen flex flex-col items-center justify-center px-4 sm:px-6 py-20">
-        <div className="absolute inset-0 bg-noise opacity-[0.06] pointer-events-none" />
-        <div className="relative w-full max-w-4xl mx-auto">
-          <div className="text-center mb-16">
-            <motion.p className="text-[10px] sm:text-xs tracking-[0.2em] uppercase mb-4" style={{ color: "#DEDBC8" }} initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }}>
-              The Flywheel
-            </motion.p>
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-medium leading-tight" style={{ color: "#E1E0CC" }}>
-              <WordsPullUp text="Three steps. One flywheel." />
-            </h2>
-          </div>
-
-          <div className="space-y-6 max-w-2xl mx-auto">
-            {[
-              { num: "01", title: "Deposit into DLMM", desc: "Provide SOL + USDC to Meteora DLMM bins through HasYield. Your bins earn concentrated trading fees.", icon: <Layers className="w-5 h-5" /> },
-              { num: "02", title: "Rehypothecate", desc: "HasYield routes the SOL to liquid staking (Marinade) and the USDC to lending markets. Your bins still earn fees — now the underlying earns too.", icon: <TrendingUp className="w-5 h-5" /> },
-              { num: "03", title: "Stack Yield", desc: "Trading fees + staking yield + lending yield. Three streams on the same capital. Withdraw anytime.", icon: <Unlock className="w-5 h-5" /> },
-            ].map((step, i) => (
-              <motion.div key={step.num} className="flex items-start gap-5 rounded-xl border border-[#1a1a1a] bg-[#0a0a0a] px-6 py-5"
-                initial={{ opacity: 0, x: -20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay: i * 0.15 }}>
-                <div className="w-10 h-10 rounded-lg bg-[#1a1a1a] flex items-center justify-center shrink-0" style={{ color: "#DEDBC8" }}>{step.icon}</div>
-                <div>
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] text-gray-500 tabular-nums">{step.num}</span>
-                    <h3 className="text-sm font-medium" style={{ color: "#E1E0CC" }}>{step.title}</h3>
-                  </div>
-                  <p className="text-xs text-gray-400 leading-relaxed">{step.desc}</p>
-                </div>
-              </motion.div>
+          <ul className="hidden md:flex gap-7 list-none m-0 p-0 text-[13px]" style={{ color: "var(--hy-ink-2)" }}>
+            {NAV.map((item) => (
+              <li key={item.href}>
+                <Link href={item.href} className="hover:text-[var(--hy-ink)] transition-colors">
+                  {item.label}
+                </Link>
+              </li>
             ))}
-          </div>
+          </ul>
+          <Link
+            href="/earn"
+            className="px-3.5 py-1.5 text-[13px] font-medium rounded-md transition-colors"
+            style={{ background: "var(--hy-cream)", color: "#0a0a0a" }}
+          >
+            Launch App →
+          </Link>
+        </div>
+      </nav>
 
-          {/* Flywheel visual */}
-          <motion.div className="mt-12 text-center" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.5 }}>
-            <div className="inline-flex items-center gap-2 text-xs text-gray-500 flex-wrap justify-center">
-              <span className="px-3 py-1 rounded-full border border-[#1a1a1a]">LP Fees</span>
-              <span>+</span>
-              <span className="px-3 py-1 rounded-full border border-[#1a1a1a]">SOL Staking</span>
-              <span>+</span>
-              <span className="px-3 py-1 rounded-full border border-[#1a1a1a]">USDC Lending</span>
-              <span>=</span>
-              <span className="px-3 py-1 rounded-full border border-[#DEDBC8]/30" style={{ color: "#DEDBC8" }}>Triple Yield</span>
+      <section className="relative px-8 pt-20 pb-28">
+        <div className="mx-auto max-w-[1280px] grid lg:grid-cols-[1.2fr_1fr] gap-20 items-center">
+          <div>
+            <div
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-[11px] uppercase tracking-[0.2em]"
+              style={{
+                fontFamily: "var(--font-data)",
+                border: "1px solid var(--hy-line-strong)",
+                color: "var(--hy-ink-2)",
+                background: "rgba(141,211,255,0.03)",
+              }}
+            >
+              <span
+                className="w-1.5 h-1.5 rounded-full animate-pulse"
+                style={{ background: "var(--hy-blue)", boxShadow: "0 0 12px var(--hy-blue)" }}
+              />
+              Live on Solana · Built on Meteora DLMM
             </div>
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ━━━ FEATURES ━━━ */}
-      <FeaturesSection />
-
-      {/* ━━━ STATS ━━━ */}
-      <section className="relative py-20 px-4 sm:px-6">
-        <div className="absolute inset-0 bg-noise opacity-[0.06] pointer-events-none" />
-        <div className="relative max-w-4xl mx-auto">
-          <motion.div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center" initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }}>
-            {[
-              { value: `${((apy + 0.072 * 0.5 + 0.12 * 0.5) * 100).toFixed(0)}%`, label: "Effective APY", sub: "triple yield stacked" },
-              { value: "3", label: "Yield streams", sub: "LP + staking + lending" },
-              { value: "0", label: "Competitors", sub: "bin rehypothecation" },
-              { value: "hyLP", label: "Composable token", sub: "Token-2022" },
-            ].map((s) => (
-              <div key={s.label}>
-                <p className="text-2xl sm:text-3xl font-bold text-gradient-cream">{s.value}</p>
-                <p className="text-[10px] text-gray-400 mt-2 uppercase tracking-wider">{s.label}</p>
-                <p className="text-[10px] text-gray-600 mt-0.5">{s.sub}</p>
-              </div>
-            ))}
-          </motion.div>
-        </div>
-      </section>
-
-      {/* ━━━ CTA ━━━ */}
-      <section className="relative py-20 sm:py-32 px-4 sm:px-6">
-        <div className="absolute inset-0 bg-noise opacity-[0.06] pointer-events-none" />
-        <div className="relative max-w-4xl mx-auto text-center">
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-medium leading-[0.95] mb-8" style={{ color: "#E1E0CC" }}>
-            <WordsPullUpMultiStyle segments={[
-              { text: "Every position", className: "font-normal" },
-              { text: "has yield.", className: "font-serif italic" },
-            ]} />
-          </h2>
-          <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.3 }}>
-            <Link href="/vault" className="group inline-flex items-center gap-2 hover:gap-3 transition-all bg-[#DEDBC8] rounded-full pl-6 pr-2 py-2">
-              <span className="text-black font-medium">Launch App</span>
-              <span className="bg-black rounded-full w-10 h-10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                <ArrowRight className="w-4 h-4" style={{ color: "#E1E0CC" }} />
+            <h1
+              className="font-medium leading-[0.98] tracking-[-0.03em] mt-6 mb-7"
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: "clamp(48px, 6.5vw, 84px)",
+                color: "var(--hy-ink)",
+              }}
+            >
+              <span className="block">Every position</span>
+              <span className="block">
+                has{" "}
+                <em
+                  className="not-italic"
+                  style={{
+                    fontFamily: "var(--font-serif)",
+                    fontStyle: "italic",
+                    color: "var(--hy-cream)",
+                    fontWeight: 400,
+                  }}
+                >
+                  yield.
+                </em>
               </span>
-            </Link>
-          </motion.div>
+              <span className="block">Now unlock it.</span>
+            </h1>
+            <p className="text-[18px] leading-relaxed max-w-[540px] mb-10" style={{ color: "var(--hy-ink-2)" }}>
+              Your DLMM liquidity earns trading fees. HasYield{" "}
+              <strong style={{ color: "var(--hy-ink)", fontWeight: 500 }}>rehypothecates</strong> the idle capital
+              underneath — SOL into liquid staking, USDC into money-market collateral.{" "}
+              <strong style={{ color: "var(--hy-ink)", fontWeight: 500 }}>Three yield streams</strong> on the same
+              dollar.
+            </p>
+            <div className="flex gap-3 items-center flex-wrap">
+              <Link
+                href="/earn"
+                className="px-6 py-3.5 text-[15px] font-medium rounded-lg inline-flex items-center gap-2 transition-transform hover:-translate-y-px"
+                style={{ background: "var(--hy-cream)", color: "#0a0a0a" }}
+              >
+                Browse Vaults <span>↗</span>
+              </Link>
+              <Link
+                href="#how"
+                className="px-5 py-3.5 text-[15px] font-medium rounded-lg transition-colors"
+                style={{
+                  border: "1px solid var(--hy-line-strong)",
+                  color: "var(--hy-ink)",
+                }}
+              >
+                See how it works
+              </Link>
+              <span
+                className="px-3 py-1.5 text-[10px] uppercase tracking-[0.15em] rounded-full"
+                style={{
+                  fontFamily: "var(--font-data)",
+                  border: "1px dashed var(--hy-line-strong)",
+                  color: "var(--hy-ink-3)",
+                }}
+              >
+                Devnet preview
+              </span>
+            </div>
+
+            <div
+              className="mt-14 pt-8 flex gap-8 flex-wrap"
+              style={{ borderTop: "1px solid var(--hy-line)" }}
+            >
+              <LiveStat
+                label="Current best pool"
+                value={`${tickerApy.toFixed(1)}%`}
+                sub="SOL/USDC · triple APY"
+                accent
+              />
+              <LiveStat
+                label="SOL staking APY"
+                value={`${(apy * 100).toFixed(2)}%`}
+                sub="via Marinade"
+              />
+              <LiveStat label="Yield streams" value="3" sub="LP · staking · lending" />
+            </div>
+          </div>
+
+          <HeroVisual />
         </div>
       </section>
 
-      {/* ━━━ COMING SOON ━━━ */}
-      <section className="relative py-20 sm:py-28 px-4 sm:px-6 border-t border-[#1a1a1a]">
-        <div className="absolute inset-0 bg-noise opacity-[0.06] pointer-events-none" />
-        <div className="relative max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <motion.p className="text-[10px] sm:text-xs tracking-[0.2em] uppercase mb-4" style={{ color: "#DEDBC8" }}
-              initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }}>
-              Roadmap
-            </motion.p>
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-medium" style={{ color: "#E1E0CC" }}>
-              <WordsPullUp text="What's coming next." />
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[
-              {
-                badge: "Coming Soon",
-                title: "Yield Trading (PT/YT)",
-                desc: "Split hyLP into Principal Token + Yield Token. Trade future yield streams. Fixed-rate positions. Like Pendle, but for DLMM bins.",
-                Icon: TrendingUp,
-              },
-              {
-                badge: "Coming Soon",
-                title: "AI Auto-Rebalancer",
-                desc: "AI agent continuously monitors yield rates across staking and lending protocols. Auto-rebalances to the highest yield after fees.",
-                Icon: Layers,
-              },
-              {
-                badge: "Coming Soon",
-                title: "Multi-Chain (EVM)",
-                desc: "Uniswap V3 positions have the same composability gap. HasYield for EVM — same rehypothecation, different chain.",
-                Icon: Shield,
-              },
-            ].map((item, i) => (
-              <motion.div key={item.title}
-                className="rounded-2xl border border-[#1a1a1a] bg-[#0a0a0a] p-6 relative overflow-hidden"
-                initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }} transition={{ delay: i * 0.1 }}>
-                <div className="absolute top-3 right-3">
-                  <span className="text-[10px] px-2 py-1 rounded-full bg-[#DEDBC8]/10 border border-[#DEDBC8]/20" style={{ color: "#DEDBC8" }}>
-                    {item.badge}
-                  </span>
-                </div>
-                <item.Icon className="w-6 h-6" style={{ color: "#DEDBC8" }} />
-                <h3 className="text-sm font-medium mt-3 mb-2" style={{ color: "#E1E0CC" }}>{item.title}</h3>
-                <p className="text-xs text-gray-500 leading-relaxed">{item.desc}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <footer className="py-12 text-center border-t border-[#1a1a1a]">
-        <p className="text-xs" style={{ color: "rgba(225,224,204,0.4)" }}>HasYield — Every position has yield</p>
-        <p className="text-[10px] text-gray-700 mt-1">Built for Colosseum Frontier</p>
-      </footer>
+      <Problem />
+      <HowItWorks />
+      <Features />
+      <DashboardPreview />
+      <FinalCTA />
+      <Footer />
     </div>
   );
 }
 
-/* ═══ ABOUT ═══ */
-function AboutSection() {
-  const textRef = useRef<HTMLParagraphElement>(null);
-  const { scrollYProgress } = useScroll({ target: textRef as React.RefObject<HTMLElement>, offset: ["start 0.8", "end 0.2"] });
-  const bodyText = "Meteora DLMM bins are on-chain limit orders that earn trading fees. But the SOL and USDC inside those bins sit idle. HasYield rehypothecates them — your bins earn fees while the underlying assets earn staking and lending yield. Triple yield on the same capital.";
+function LiveStat({
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="flex-1 min-w-[140px]">
+      <div
+        className="text-[10px] uppercase tracking-[0.15em] mb-1.5"
+        style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
+      >
+        {label}
+      </div>
+      <div
+        className="font-medium text-[28px] tracking-tight leading-none"
+        style={{
+          fontFamily: "var(--font-display)",
+          color: accent ? "var(--hy-blue)" : "var(--hy-ink)",
+        }}
+      >
+        {value}
+      </div>
+      <div
+        className="text-[11px] mt-1"
+        style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
+      >
+        {sub}
+      </div>
+    </div>
+  );
+}
+
+function HeroVisual() {
+  return (
+    <div className="relative flex items-center justify-center min-h-[520px]">
+      <div
+        className="absolute rounded-full pointer-events-none"
+        style={{
+          width: 560,
+          height: 560,
+          border: "1px dashed var(--hy-line-strong)",
+          animation: "hy-orbit-rot 30s linear infinite",
+        }}
+      >
+        {ORBIT_INNER.map((p, i) => {
+          const angle = (i / ORBIT_INNER.length) * 360;
+          return <ProtocolBadge key={p.name} name={p.name} icon={p.icon} angle={angle} radius={280} reverseAnim="hy-orbit-counter" />;
+        })}
+      </div>
+      <div
+        className="absolute rounded-full pointer-events-none"
+        style={{
+          width: 720,
+          height: 720,
+          border: "1px dashed rgba(141,211,255,0.08)",
+          animation: "hy-orbit-rot 50s linear infinite reverse",
+        }}
+      >
+        {ORBIT_OUTER.map((p, i) => {
+          const angle = (i / ORBIT_OUTER.length) * 360 + 30;
+          return <ProtocolBadge key={p.name} name={p.name} icon={p.icon} angle={angle} radius={360} reverseAnim="hy-orbit-counter-rev" />;
+        })}
+      </div>
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1] }}
+        className="relative z-10"
+      >
+        <Coin3D size={260} thickness={28} />
+      </motion.div>
+    </div>
+  );
+}
+
+function ProtocolBadge({
+  name,
+  icon,
+  angle,
+  radius,
+  reverseAnim,
+}: {
+  name: string;
+  icon: string;
+  angle: number;
+  radius: number;
+  reverseAnim: string;
+}) {
+  const rad = (angle * Math.PI) / 180;
+  const x = Math.cos(rad) * radius;
+  const y = Math.sin(rad) * radius;
+  return (
+    <div
+      className="group absolute top-1/2 left-1/2 w-[44px] h-[44px] pointer-events-auto"
+      style={{
+        transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`,
+      }}
+      title={name}
+    >
+      <div
+        className="w-full h-full rounded-full overflow-hidden grid place-items-center transition-transform duration-200 group-hover:scale-110"
+        style={{
+          background: "var(--hy-panel-2)",
+          border: "1px solid var(--hy-line-strong)",
+          boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+          animation: `${reverseAnim} 30s linear infinite`,
+        }}
+      >
+        <img src={icon} alt={name} className="w-[32px] h-[32px] rounded-full object-cover" />
+      </div>
+      <div
+        className="absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none"
+        style={{
+          fontFamily: "var(--font-data)",
+          fontSize: 10,
+          textTransform: "uppercase",
+          letterSpacing: "0.15em",
+          color: "var(--hy-ink)",
+          background: "rgba(8,8,10,0.9)",
+          border: "1px solid var(--hy-line-strong)",
+        }}
+      >
+        {name}
+      </div>
+    </div>
+  );
+}
+
+function SectionHead({ num, title, sub, id }: { num: string; title: React.ReactNode; sub: string; id?: string }) {
+  return (
+    <div id={id} className="max-w-[720px] mb-14">
+      <div
+        className="flex items-center gap-2.5 mb-3 text-[11px] uppercase tracking-[0.2em]"
+        style={{ fontFamily: "var(--font-data)", color: "var(--hy-blue)" }}
+      >
+        <span className="inline-block w-6 h-px" style={{ background: "var(--hy-blue)" }} />
+        {num}
+      </div>
+      <h2
+        className="font-medium leading-[1.05] tracking-[-0.02em] mb-5"
+        style={{ fontFamily: "var(--font-display)", fontSize: "clamp(32px, 4vw, 52px)", color: "var(--hy-ink)" }}
+      >
+        {title}
+      </h2>
+      <p className="text-[17px] leading-relaxed max-w-[600px]" style={{ color: "var(--hy-ink-2)" }}>
+        {sub}
+      </p>
+    </div>
+  );
+}
+
+function Problem() {
+  return (
+    <section id="problem" className="px-8 py-28" style={{ borderTop: "1px solid var(--hy-line)" }}>
+      <div className="mx-auto max-w-[1280px] grid lg:grid-cols-2 gap-20 items-center">
+        <div>
+          <SectionHead
+            num="01 · The gap"
+            title={
+              <>
+                Your bins earn fees.{" "}
+                <em style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", color: "var(--hy-cream)" }}>
+                  The capital inside
+                </em>{" "}
+                sits idle.
+              </>
+            }
+            sub="Meteora DLMM bins are on-chain limit orders. They earn concentrated trading fees — but the SOL and USDC inside those bins are static, just sitting there waiting for a trade. Billions of idle capital across every DLMM on Solana."
+          />
+        </div>
+        <IdleViz />
+      </div>
+    </section>
+  );
+}
+
+function IdleViz() {
+  const bins = Array.from({ length: 32 }, (_, i) => i);
+  return (
+    <div
+      className="relative p-8 rounded-2xl aspect-[4/3]"
+      style={{ background: "var(--hy-panel)", border: "1px solid var(--hy-line)" }}
+    >
+      <div
+        className="text-[10px] uppercase tracking-[0.15em]"
+        style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
+      >
+        DLMM bins · SOL/USDC
+      </div>
+      <div className="flex gap-[3px] h-[140px] items-end my-5">
+        {bins.map((i) => {
+          const isActive = i === 16;
+          const height = 20 + Math.abs(16 - i) < 10 ? 80 - Math.abs(16 - i) * 6 : 30 + ((i * 7) % 20);
+          return (
+            <div
+              key={i}
+              className="flex-1 rounded-t-[2px] relative"
+              style={{
+                height: `${height}%`,
+                background: isActive
+                  ? "linear-gradient(to top, var(--hy-blue), rgba(141,211,255,0.3))"
+                  : "linear-gradient(to top, rgba(141,211,255,0.2), rgba(141,211,255,0.05))",
+                border: isActive ? "1px solid var(--hy-blue)" : "1px solid rgba(141,211,255,0.15)",
+              }}
+            />
+          );
+        })}
+      </div>
+      <div
+        className="text-[11px] leading-relaxed"
+        style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-2)" }}
+      >
+        <span style={{ color: "var(--hy-warn)" }}>↓</span> Each bin holds assets. Only the active bin earns fees right
+        now. The others just wait.
+      </div>
+    </div>
+  );
+}
+
+function HowItWorks() {
+  const steps = [
+    {
+      num: "01",
+      title: "Deposit",
+      desc: "Provide SOL + USDC through HasYield. We place liquidity into Meteora DLMM bins across your chosen range.",
+      visual: <MiniBins />,
+    },
+    {
+      num: "02",
+      title: "Rehypothecate",
+      desc: "The SOL routes to Marinade (liquid staking). The USDC goes into money-market collateral. Your DLMM position keeps earning fees on top.",
+      visual: <RoutingViz />,
+    },
+    {
+      num: "03",
+      title: "Stack yield",
+      desc: "LP trading fees + staking yield + lending yield. Three streams on the same capital. hyLP token represents your share — composable anywhere.",
+      visual: <StackViz />,
+    },
+  ];
 
   return (
-    <section id="problem" className="bg-black py-20 sm:py-32 px-4 sm:px-6">
-      <div className="mx-auto max-w-6xl">
-        <div className="bg-[#101010] rounded-2xl md:rounded-3xl p-8 sm:p-12 md:p-20 text-center">
-          <motion.p className="text-[10px] sm:text-xs tracking-[0.2em] uppercase mb-8" style={{ color: "#DEDBC8" }} initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }}>
-            The Problem
-          </motion.p>
-          <h2 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl xl:text-7xl max-w-4xl mx-auto leading-[0.95] sm:leading-[0.9]" style={{ color: "#E1E0CC" }}>
-            <WordsPullUpMultiStyle segments={[
-              { text: "Your DLMM bins earn fees.", className: "font-normal" },
-              { text: "But the capital inside?", className: "font-serif italic" },
-              { text: "Idle.", className: "font-normal" },
-            ]} />
-          </h2>
-          <p ref={textRef} className="mt-12 sm:mt-16 text-xs sm:text-sm md:text-base max-w-2xl mx-auto leading-relaxed" style={{ color: "#DEDBC8", wordBreak: "break-word", overflowWrap: "break-word" }}>
-            {bodyText.split(" ").map((word, wi) => (
-              <span key={wi} className="inline">
-                {word.split("").map((char, ci) => {
-                  const globalIndex = bodyText.indexOf(word, bodyText.split(" ").slice(0, wi).join(" ").length) + ci;
-                  return <AnimChar key={`${wi}-${ci}`} char={char} index={globalIndex} total={bodyText.length} progress={scrollYProgress} />;
-                })}
-                {wi < bodyText.split(" ").length - 1 && <AnimChar char=" " index={0} total={bodyText.length} progress={scrollYProgress} />}
-              </span>
-            ))}
-          </p>
+    <section id="how" className="px-8 py-32" style={{ borderTop: "1px solid var(--hy-line)" }}>
+      <div className="mx-auto max-w-[1280px]">
+        <SectionHead
+          num="02 · The flywheel"
+          title={
+            <>
+              Three steps.{" "}
+              <em style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", color: "var(--hy-cream)" }}>
+                One capital stack.
+              </em>
+            </>
+          }
+          sub="Most yield protocols pick one layer. HasYield composes three — concentrated liquidity provision, liquid staking, and on-chain lending — on the same deposited asset."
+        />
+        <div className="grid md:grid-cols-3 mt-14">
+          {steps.map((s, i) => (
+            <div
+              key={s.num}
+              className="p-9 relative"
+              style={{ borderLeft: i === 0 ? "none" : "1px solid var(--hy-line)" }}
+            >
+              <div
+                className="mb-4 text-[12px] tracking-[0.15em]"
+                style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
+              >
+                Step <span style={{ color: "var(--hy-blue)" }}>{s.num}</span>
+              </div>
+              <h3
+                className="text-[22px] font-medium mb-3 tracking-tight"
+                style={{ fontFamily: "var(--font-display)", color: "var(--hy-ink)" }}
+              >
+                {s.title}
+              </h3>
+              <p className="text-[14px] leading-relaxed mb-6" style={{ color: "var(--hy-ink-2)" }}>
+                {s.desc}
+              </p>
+              <div
+                className="h-[120px] rounded-lg flex items-center justify-center relative overflow-hidden"
+                style={{ background: "var(--hy-panel)", border: "1px solid var(--hy-line)" }}
+              >
+                {s.visual}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </section>
   );
 }
 
-function AnimChar({ char, index, total, progress }: { char: string; index: number; total: number; progress: ReturnType<typeof useScroll>["scrollYProgress"] }) {
-  const p = index / total;
-  const opacity = useTransform(progress, [p - 0.1, p + 0.05], [0.2, 1]);
-  return <motion.span style={{ opacity }}>{char === " " ? "\u00A0" : char}</motion.span>;
+function MiniBins() {
+  return (
+    <div className="flex gap-[2px] h-[70%] items-end px-5">
+      {Array.from({ length: 28 }).map((_, i) => {
+        const h = 15 + (Math.sin(i / 3) + 1) * 35 + (i % 3) * 4;
+        return (
+          <div
+            key={i}
+            style={{
+              width: 6,
+              height: `${h}px`,
+              background: "linear-gradient(to top, var(--hy-blue), rgba(141,211,255,0.3))",
+              borderRadius: 1,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
-/* ═══ FEATURES ═══ */
-const features = [
-  { icon: <Layers className="w-5 h-5" />, num: "01", title: "DLMM Bin Rehypothecation", items: ["Deposit into Meteora DLMM bins", "SOL routed to Marinade staking", "USDC routed to lending markets", "Bins still earn trading fees"] },
-  { icon: <TrendingUp className="w-5 h-5" />, num: "02", title: "Triple Yield Stacking", items: ["LP trading fees (30-60% APY)", "SOL staking yield (~7% APY)", "USDC lending yield (~12% APY)", "Combined: up to 79% effective APY"] },
-  { icon: <Shield className="w-5 h-5" />, num: "03", title: "Solana-Native Architecture", items: ["Token-2022 hyLP position tokens", "Transfer Hook collateral enforcement", "Composable across Solana DeFi", "Impossible on EVM — bins are Solana-only"] },
-];
+function RoutingViz() {
+  return (
+    <div
+      className="flex items-center gap-3 px-4"
+      style={{ fontFamily: "var(--font-data)", fontSize: 10, color: "var(--hy-ink-2)" }}
+    >
+      <div
+        className="px-2.5 py-1.5 rounded"
+        style={{ border: "1px solid var(--hy-line-strong)", background: "var(--hy-panel-2)" }}
+      >
+        DLMM Bin
+      </div>
+      <span style={{ color: "var(--hy-blue)" }}>→</span>
+      <div className="flex flex-col gap-1">
+        <div
+          className="px-2.5 py-1 rounded"
+          style={{ border: "1px solid var(--hy-line-strong)", background: "var(--hy-panel-2)" }}
+        >
+          Marinade · SOL
+        </div>
+        <div
+          className="px-2.5 py-1 rounded"
+          style={{ border: "1px solid var(--hy-line-strong)", background: "var(--hy-panel-2)" }}
+        >
+          Lending · USDC
+        </div>
+      </div>
+    </div>
+  );
+}
 
-function FeaturesSection() {
-  const ref = useRef<HTMLDivElement>(null);
-  const isInView = useInView(ref, { once: true, margin: "-100px" });
+function StackViz() {
+  const bars = [
+    { name: "LP", pct: 70, val: "11.4%" },
+    { name: "Stake", pct: 42, val: "6.8%" },
+    { name: "Lend", pct: 28, val: "4.5%" },
+  ];
+  return (
+    <div className="flex flex-col gap-1.5 w-[80%] px-5" style={{ fontFamily: "var(--font-data)" }}>
+      {bars.map((b) => (
+        <div key={b.name} className="flex items-center gap-2 text-[10px]" style={{ color: "var(--hy-ink-2)" }}>
+          <span className="w-[40px]">{b.name}</span>
+          <div
+            className="flex-1 h-2 rounded-[2px] overflow-hidden"
+            style={{ background: "var(--hy-panel-2)" }}
+          >
+            <div
+              style={{
+                width: `${b.pct}%`,
+                height: "100%",
+                background: "var(--hy-blue)",
+              }}
+            />
+          </div>
+          <span className="w-[38px] text-right" style={{ color: "var(--hy-ink)" }}>
+            {b.val}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Features() {
+  const feats = [
+    {
+      tag: "01 · Rehypothecation",
+      title: "Same dollar, three layers",
+      desc: "Your capital doesn't sit in one place. It's productively deployed across LP provision, liquid staking, and lending — all from one deposit.",
+      bullets: ["Meteora DLMM bins", "Marinade mSOL", "Money-market collateral", "hyLP vault share (Token-2022)"],
+    },
+    {
+      tag: "02 · Triple yield",
+      title: "12 – 30% combined APY",
+      desc: "Honest ranges from all three sources. Fees vary with volume, staking is stable, lending tracks utilization.",
+      bullets: ["LP fees 3 – 42%", "Staking 5 – 7%", "Lending 2 – 12%"],
+    },
+    {
+      tag: "03 · Solana-native",
+      title: "Not possible on EVM",
+      desc: "DLMM bins are a Solana primitive. Token-2022 transfer hooks enforce collateral lockup at the token layer — no custody wrapper needed.",
+      bullets: ["Token-2022 hyLP", "Transfer hook enforcement", "Composable everywhere"],
+    },
+  ];
 
   return (
-    <section id="features" className="relative bg-black py-20 sm:py-32 px-4 sm:px-6">
-      <div className="absolute inset-0 bg-noise opacity-[0.15] pointer-events-none" />
-      <div className="relative mx-auto max-w-6xl">
-        <div className="text-center mb-12 sm:mb-16">
-          <h2 className="text-xl sm:text-2xl md:text-3xl lg:text-4xl font-normal" style={{ color: "#E1E0CC" }}>
-            <WordsPullUpMultiStyle segments={[{ text: "Concentrated liquidity bin rehypothecation.", className: "" }]} />
-          </h2>
-          <p className="mt-3 text-xl sm:text-2xl md:text-3xl lg:text-4xl font-normal text-gray-500">
-            <WordsPullUpMultiStyle segments={[{ text: "Built on Meteora DLMM. Powered by Solana.", className: "text-gray-500" }]} />
-          </p>
-        </div>
-        <div ref={ref} className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {features.map((f, i) => (
-            <motion.div key={f.num} className="bg-[#212121] rounded-2xl p-5 sm:p-6 flex flex-col justify-between"
-              initial={{ opacity: 0, scale: 0.95 }} animate={isInView ? { opacity: 1, scale: 1 } : {}}
-              transition={{ duration: 0.6, delay: i * 0.15, ease: [0.22, 1, 0.36, 1] }}>
-              <div>
-                <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-lg bg-[#2a2a2a] flex items-center justify-center mb-4" style={{ color: "#DEDBC8" }}>{f.icon}</div>
-                <h3 className="text-sm sm:text-base font-medium mb-1" style={{ color: "#E1E0CC" }}>{f.title}</h3>
-                <p className="text-[10px] text-gray-500 mb-4">{f.num}</p>
-                <ul className="space-y-2">
-                  {f.items.map((item, j) => (
-                    <li key={j} className="flex items-start gap-2 text-xs text-gray-400">
-                      <Check className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: "#DEDBC8" }} /><span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
+    <section id="features" className="px-8 py-32" style={{ borderTop: "1px solid var(--hy-line)" }}>
+      <div className="mx-auto max-w-[1280px]">
+        <SectionHead
+          num="03 · Why HasYield"
+          title={
+            <>
+              Built for{" "}
+              <em style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", color: "var(--hy-cream)" }}>
+                productive capital.
+              </em>
+            </>
+          }
+          sub="A composability layer, not another DLMM. HasYield sits on top of Meteora, Marinade, and money markets — coordinating them into a single vault share."
+        />
+        <div
+          className="grid md:grid-cols-3 rounded-2xl overflow-hidden mt-14"
+          style={{ border: "1px solid var(--hy-line-strong)", background: "var(--hy-line)" }}
+        >
+          {feats.map((f) => (
+            <div
+              key={f.tag}
+              className="p-10 flex flex-col gap-5 min-h-[340px]"
+              style={{ background: "var(--hy-panel)" }}
+            >
+              <div
+                className="text-[10px] uppercase tracking-[0.2em]"
+                style={{ fontFamily: "var(--font-data)", color: "var(--hy-blue)" }}
+              >
+                {f.tag}
               </div>
-              <Link href="/vault" className="mt-4 inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors">
-                Launch App <ArrowRight className="w-3 h-3 -rotate-45" />
-              </Link>
-            </motion.div>
+              <h3
+                className="text-[24px] font-medium leading-tight tracking-tight m-0"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                {f.title}
+              </h3>
+              <p className="text-[14px] leading-relaxed m-0" style={{ color: "var(--hy-ink-2)" }}>
+                {f.desc}
+              </p>
+              <ul className="mt-auto flex flex-col gap-2 p-0 list-none" style={{ fontFamily: "var(--font-data)" }}>
+                {f.bullets.map((b) => (
+                  <li
+                    key={b}
+                    className="flex gap-2.5 py-2 text-[12px]"
+                    style={{ borderTop: "1px dashed var(--hy-line)", color: "var(--hy-ink-2)" }}
+                  >
+                    <span style={{ color: "var(--hy-blue)" }}>+</span>
+                    {b}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ))}
         </div>
       </div>
     </section>
+  );
+}
+
+function DashboardPreview() {
+  return (
+    <section id="preview" className="px-8 py-32" style={{ borderTop: "1px solid var(--hy-line)" }}>
+      <div className="mx-auto max-w-[1280px]">
+        <SectionHead
+          num="04 · The app"
+          title={
+            <>
+              Your positions,{" "}
+              <em style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", color: "var(--hy-cream)" }}>
+                honestly rendered.
+              </em>
+            </>
+          }
+          sub="Everything on-chain. No simulated state, no hidden routing. What you see is what the vault did."
+        />
+        <div
+          className="mt-12 p-4 rounded-2xl relative overflow-hidden"
+          style={{
+            background: "linear-gradient(180deg, var(--hy-panel-2), var(--hy-panel))",
+            border: "1px solid var(--hy-line-strong)",
+          }}
+        >
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: "radial-gradient(ellipse at top, rgba(141,211,255,0.08), transparent 60%)" }}
+          />
+          <div className="flex items-center gap-2 px-2 pb-3 relative z-10">
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="w-2.5 h-2.5 rounded-full"
+                style={{ background: "var(--hy-line-strong)" }}
+              />
+            ))}
+            <span
+              className="ml-3 px-3 py-1 rounded text-[11px]"
+              style={{
+                fontFamily: "var(--font-data)",
+                color: "var(--hy-ink-3)",
+                background: "rgba(0,0,0,0.3)",
+              }}
+            >
+              hasyield.xyz/dashboard
+            </span>
+          </div>
+          <div
+            className="relative z-10 rounded-lg overflow-hidden aspect-[16/9] grid place-items-center"
+            style={{ background: "var(--hy-bg)", border: "1px solid var(--hy-line)" }}
+          >
+            <div className="text-center px-8">
+              <div
+                className="text-[10px] uppercase tracking-[0.25em] mb-3"
+                style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
+              >
+                Devnet preview
+              </div>
+              <div
+                className="text-[28px] font-medium tracking-tight"
+                style={{ fontFamily: "var(--font-display)", color: "var(--hy-ink)" }}
+              >
+                Dashboard coming soon
+              </div>
+              <p className="text-[14px] mt-3 max-w-[420px] mx-auto" style={{ color: "var(--hy-ink-2)" }}>
+                Vault execution is live on devnet. Portfolio view ships in the next build.
+              </p>
+              <Link
+                href="/vault"
+                className="inline-block mt-6 px-5 py-2.5 text-[13px] font-medium rounded-md"
+                style={{ background: "var(--hy-cream)", color: "#0a0a0a" }}
+              >
+                Try the vault →
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FinalCTA() {
+  return (
+    <section
+      className="relative px-8 py-32 text-center"
+      style={{ borderTop: "1px solid var(--hy-line)" }}
+    >
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ background: "radial-gradient(ellipse 800px 400px at 50% 50%, rgba(141,211,255,0.06), transparent 60%)" }}
+      />
+      <div className="relative mx-auto max-w-[720px]">
+        <h2
+          className="font-medium leading-[1.0] tracking-[-0.04em] mb-5"
+          style={{ fontFamily: "var(--font-display)", fontSize: "clamp(40px, 6vw, 72px)" }}
+        >
+          Every position{" "}
+          <em style={{ fontFamily: "var(--font-serif)", fontStyle: "italic", color: "var(--hy-cream)" }}>
+            has yield.
+          </em>
+        </h2>
+        <p className="text-[18px] max-w-[520px] mx-auto mb-10" style={{ color: "var(--hy-ink-2)" }}>
+          Built for Colosseum Frontier. Running on Solana devnet. Real CPI into Meteora DLMM, Marinade, and our lending
+          market.
+        </p>
+        <Link
+          href="/earn"
+          className="inline-flex items-center gap-2 px-7 py-4 text-[16px] font-medium rounded-lg"
+          style={{ background: "var(--hy-cream)", color: "#0a0a0a" }}
+        >
+          Browse Vaults <span>↗</span>
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="px-8 pt-14 pb-10" style={{ borderTop: "1px solid var(--hy-line)" }}>
+      <div className="mx-auto max-w-[1280px] flex justify-between items-start gap-10 flex-wrap">
+        <div className="flex items-center gap-2.5 text-[14px]" style={{ color: "var(--hy-ink-2)" }}>
+          <img src="/logo.png" alt="" className="w-6 h-6 rounded-full" />
+          HasYield · Every position has yield
+        </div>
+        <div
+          className="flex gap-7 text-[12px] uppercase tracking-[0.15em]"
+          style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
+        >
+          <a href="https://github.com/HasYield-Protocol" target="_blank" className="hover:text-[var(--hy-ink)]">
+            GitHub
+          </a>
+          <a href="#" className="hover:text-[var(--hy-ink)]">
+            Docs
+          </a>
+          <a href="#" className="hover:text-[var(--hy-ink)]">
+            Twitter
+          </a>
+        </div>
+        <div className="text-[11px]" style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}>
+          Built for Colosseum Frontier · 2026
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+function AmbientBackground() {
+  return (
+    <>
+      <div
+        className="fixed inset-0 pointer-events-none z-0"
+        style={{
+          background: `
+            radial-gradient(ellipse 900px 600px at 15% 0%, rgba(141,211,255,0.06), transparent 60%),
+            radial-gradient(ellipse 800px 500px at 85% 15%, rgba(222,219,200,0.04), transparent 60%),
+            radial-gradient(ellipse 1200px 700px at 50% 100%, rgba(141,211,255,0.03), transparent 70%)
+          `,
+        }}
+      />
+      <div
+        className="fixed inset-0 pointer-events-none z-[1] opacity-40 mix-blend-overlay"
+        style={{
+          backgroundImage: `url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.05 0'/></filter><rect width='180' height='180' filter='url(%23n)'/></svg>")`,
+        }}
+      />
+    </>
   );
 }
