@@ -607,7 +607,7 @@ function Features() {
               </em>
             </>
           }
-          sub="DLMM bins are a Solana-native primitive. Token-2022 transfer hooks enforce collateral lockup at the token layer — no custody wrapper, no escrow contract, no synthetic. HasYield is a composability layer: real CPI into Meteora and Marinade today, routing to more venues as the cranker whitelists them."
+          sub="DLMM bins are a Solana-native primitive. Token-2022 transfer hooks enforce collateral lockup at the token layer — no custody wrapper, no escrow contract, no synthetic. HasYield is a composability layer: real CPI into Meteora and Marinade today, routing to more venues as the HasYield Keeper whitelists them."
         />
         <div
           className="grid md:grid-cols-3 rounded-2xl overflow-hidden mt-14"

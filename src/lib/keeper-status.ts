@@ -1,4 +1,4 @@
-export type CrankerRunLog = {
+export type KeeperRunLog = {
   timestamp: string;
   marinadeApy: number | null;
   currentBps: number | null;
@@ -9,8 +9,8 @@ export type CrankerRunLog = {
   error?: string;
 };
 
-export type CrankerStatus = {
-  last: CrankerRunLog | null;
+export type KeeperStatus = {
+  last: KeeperRunLog | null;
   nextEta: Date | null;
   intervalSec: number;
   loaded: boolean;
@@ -18,16 +18,16 @@ export type CrankerStatus = {
 
 const DEFAULT_INTERVAL = 6 * 60 * 60; // 6h
 
-export async function fetchCrankerStatus(): Promise<CrankerStatus> {
+export async function fetchKeeperStatus(): Promise<KeeperStatus> {
   const endpoint =
-    process.env.NEXT_PUBLIC_CRANKER_STATUS_URL ||
-    "/api/cranker/status";
+    process.env.NEXT_PUBLIC_KEEPER_STATUS_URL ||
+    "/api/keeper/status";
 
   try {
     const res = await fetch(endpoint, { cache: "no-store" });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    const last: CrankerRunLog | null = data.last ?? null;
+    const last: KeeperRunLog | null = data.last ?? null;
     const intervalSec: number = data.intervalSec ?? DEFAULT_INTERVAL;
     const nextEta =
       last ? new Date(new Date(last.timestamp).getTime() + intervalSec * 1000) : null;
@@ -47,6 +47,17 @@ export function formatTimeAgo(iso: string): string {
   const h = Math.floor(m / 60);
   if (h < 48) return `${h}h ago`;
   return `${Math.floor(h / 24)}d ago`;
+}
+
+export async function fetchKeeperHistory(limit = 10): Promise<KeeperRunLog[]> {
+  try {
+    const res = await fetch(`/api/keeper/history?limit=${limit}`, { cache: "no-store" });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.runs) ? data.runs : [];
+  } catch {
+    return [];
+  }
 }
 
 export function formatTimeUntil(date: Date): string {

@@ -17,10 +17,10 @@ function readLastLogLine(filePath: string): string | null {
 }
 
 export async function GET() {
-  const intervalSec = Number(process.env.CRANKER_INTERVAL_SEC ?? DEFAULT_INTERVAL_SEC);
+  const intervalSec = Number(process.env.KEEPER_INTERVAL_SEC ?? DEFAULT_INTERVAL_SEC);
 
-  // Prefer remote endpoint if configured (production: cranker on VPS exposes this)
-  const remote = process.env.CRANKER_STATUS_REMOTE;
+  // Prefer remote endpoint if configured (production: keeper on VPS exposes this)
+  const remote = process.env.KEEPER_STATUS_REMOTE;
   if (remote) {
     try {
       const res = await fetch(remote, { cache: "no-store" });

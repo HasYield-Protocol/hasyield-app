@@ -12,9 +12,9 @@ import { getMarinadeApy } from "@/lib/marinade-apy";
 import { getPoolInfo, type PoolInfo } from "@/lib/meteora";
 import { POSITION_LOWER_BIN_ID, POSITION_WIDTH, ACTIVE_ID } from "@/lib/lp-constants";
 import {
-  fetchCrankerStatus, formatTimeAgo, formatTimeUntil,
-  type CrankerStatus,
-} from "@/lib/cranker-status";
+  fetchKeeperStatus, fetchKeeperHistory, formatTimeAgo, formatTimeUntil,
+  type KeeperStatus, type KeeperRunLog,
+} from "@/lib/keeper-status";
 
 const SOL_PRICE_USD = 155;
 
@@ -490,10 +490,16 @@ function Chapter02Rehypothecate({
   const usdcInVault = state ? state.totalDepositedX / 1e6 : 0;
 
   const [showSankey, setShowSankey] = useState(false);
-  const [cranker, setCranker] = useState<CrankerStatus | null>(null);
+  const [keeper, setKeeper] = useState<KeeperStatus | null>(null);
+  const [history, setHistory] = useState<KeeperRunLog[]>([]);
   useEffect(() => {
     let cancel = false;
-    const load = () => fetchCrankerStatus().then((s) => { if (!cancel) setCranker(s); });
+    const load = async () => {
+      const [status, hist] = await Promise.all([fetchKeeperStatus(), fetchKeeperHistory(8)]);
+      if (cancel) return;
+      setKeeper(status);
+      setHistory(hist);
+    };
     load();
     const id = setInterval(load, 60_000);
     return () => { cancel = true; clearInterval(id); };
@@ -506,8 +512,8 @@ function Chapter02Rehypothecate({
         title={hasPosition ? "Your capital is rehypothecated" : "Capital gets rehypothecated"}
         sub={
           hasPosition
-            ? "While your bins earn DLMM fees, the idle underlying is staked and lent. Live allocation from chain, rebalanced by the HasYield cranker."
-            : "SOL routes to liquid staking. USDC routes to money-market collateral. Bins still earn fees on top. AI-driven cranker rebalances to the highest venue."
+            ? "While your bins earn DLMM fees, the idle underlying is staked and lent. Live allocation from chain, rebalanced by the HasYield Keeper."
+            : "SOL routes to liquid staking. USDC routes to money-market collateral. Bins still earn fees on top. The HasYield Keeper rebalances to the highest-yielding venue every 6 hours."
         }
       />
 
@@ -519,7 +525,7 @@ function Chapter02Rehypothecate({
           >
             Your capital flow
           </div>
-          <CrankerBadge cranker={cranker} />
+          <KeeperBadge keeper={keeper} />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
@@ -534,7 +540,7 @@ function Chapter02Rehypothecate({
           />
           <FlowCard
             venue="Marinade"
-            sub={`SOL staking · ${msolAmount > 0 ? msolAmount.toFixed(3) + " mSOL" : "soonest cranker"}`}
+            sub={`SOL staking · ${msolAmount > 0 ? msolAmount.toFixed(3) + " mSOL" : "SOL → mSOL"}`}
             apy={stakeApy}
             pct={marinadePct}
             color="var(--hy-cream)"
@@ -590,18 +596,106 @@ function Chapter02Rehypothecate({
               style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
             >
               Composability layer — venues marked <span style={{ color: "var(--hy-blue)" }}>live</span> execute via
-              on-chain CPI. Non-live venues are wired for routing once cranker whitelists them.
+              on-chain CPI. Non-live venues are wired for routing once the Keeper whitelists them.
             </p>
           </motion.div>
         )}
       </Panel>
+
+      <div className="mt-5">
+        <RecentRebalances history={history} />
+      </div>
     </section>
   );
 }
 
-function CrankerBadge({ cranker }: { cranker: CrankerStatus | null }) {
-  const last = cranker?.last ?? null;
-  const nextEta = cranker?.nextEta ?? null;
+function RecentRebalances({ history }: { history: KeeperRunLog[] }) {
+  const rebalanced = history.filter((h) => h.decision === "rebalanced");
+  return (
+    <div
+      className="rounded-2xl p-5"
+      style={{ background: "var(--hy-panel)", border: "1px solid var(--hy-line-strong)" }}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <div
+          className="text-[10px] uppercase tracking-[0.15em]"
+          style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
+        >
+          Recent rebalances
+        </div>
+        <span
+          className="text-[10px]"
+          style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
+        >
+          {rebalanced.length} on-chain
+        </span>
+      </div>
+      {rebalanced.length === 0 ? (
+        <div
+          className="py-6 text-center text-[12px]"
+          style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}
+        >
+          No rebalances yet — Keeper will fire when the delta exceeds 500 bps.
+        </div>
+      ) : (
+        <div>
+          {rebalanced.map((r, i) => (
+            <RebalanceRow key={`${r.timestamp}-${i}`} run={r} first={i === 0} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RebalanceRow({ run, first }: { run: KeeperRunLog; first: boolean }) {
+  const fromPct = run.currentBps != null ? (run.currentBps / 100).toFixed(1) : "—";
+  const toPct = run.optimalBps != null ? (run.optimalBps / 100).toFixed(1) : "—";
+  const direction = (run.optimalBps ?? 0) > (run.currentBps ?? 0) ? "↑" : "↓";
+  const apy = run.marinadeApy != null ? (run.marinadeApy * 100).toFixed(2) + "%" : "—";
+  return (
+    <div
+      className="grid gap-3 items-center py-3 text-[12px]"
+      style={{
+        gridTemplateColumns: "auto 1fr auto auto auto",
+        fontFamily: "var(--font-data)",
+        borderTop: first ? "none" : "1px dashed var(--hy-line)",
+      }}
+    >
+      <span
+        className="w-[6px] h-[6px] rounded-full"
+        style={{ background: "var(--hy-blue)", boxShadow: "0 0 6px var(--hy-blue)" }}
+      />
+      <span style={{ color: "var(--hy-ink)" }}>
+        Marinade{" "}
+        <span style={{ color: "var(--hy-ink-2)" }}>
+          {fromPct}% {direction} {toPct}%
+        </span>
+      </span>
+      <span style={{ color: "var(--hy-ink-3)" }} className="hidden sm:inline">
+        mSOL APY {apy}
+      </span>
+      <span style={{ color: "var(--hy-ink-3)" }}>{formatTimeAgo(run.timestamp)}</span>
+      {run.txSig ? (
+        <a
+          href={`https://solscan.io/tx/${run.txSig}?cluster=devnet`}
+          target="_blank"
+          rel="noreferrer"
+          className="underline"
+          style={{ color: "var(--hy-blue)" }}
+        >
+          tx ↗
+        </a>
+      ) : (
+        <span />
+      )}
+    </div>
+  );
+}
+
+function KeeperBadge({ keeper }: { keeper: KeeperStatus | null }) {
+  const last = keeper?.last ?? null;
+  const nextEta = keeper?.nextEta ?? null;
   const live = !!last;
   const decision = last?.decision;
   return (
@@ -621,7 +715,7 @@ function CrankerBadge({ cranker }: { cranker: CrankerStatus | null }) {
             boxShadow: live ? "0 0 6px var(--hy-blue)" : "none",
           }}
         />
-        Cranker · {cranker?.intervalSec ? Math.round(cranker.intervalSec / 3600) : 6}h cadence
+        Keeper · {keeper?.intervalSec ? Math.round(keeper.intervalSec / 3600) : 6}h cadence
       </span>
       <span className="text-[10px]" style={{ fontFamily: "var(--font-data)", color: "var(--hy-ink-3)" }}>
         {last
